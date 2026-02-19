@@ -1,0 +1,24 @@
+{
+  "name": "sigil",
+  "version": "0.1.0",
+  "description": "Cryptographic identity and provenance for AI agents",
+  "type": "module",
+  "main": "core/index.js",
+  "bin": {
+    "sigil": "./cli/sigil.js"
+  },
+  "scripts": {
+    "test": "node --test",
+    "cli": "node cli/sigil.js"
+  },
+  "keywords": [
+    "ai",
+    "agent",
+    "identity",
+    "cryptography",
+    "provenance",
+    "audit"
+  ],
+  "author": "Thomas & Tosch",
+  "license": "MIT"
+}
