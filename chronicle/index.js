@@ -13,8 +13,8 @@ import { join, dirname } from 'path';
 import { homedir } from 'os';
 import { hash, randomId } from '../core/index.js';
 
-const SIGIL_DIR = join(homedir(), '.sigil');
-const CHRONICLES_DIR = join(SIGIL_DIR, 'chronicles');
+const SIEGEL_DIR = join(homedir(), '.siegel');
+const CHRONICLES_DIR = join(SIEGEL_DIR, 'chronicles');
 
 /**
  * A single entry in the chronicle

@@ -11,8 +11,8 @@ import { join, dirname } from 'path';
 import { homedir } from 'os';
 
 // Default paths
-const SIGIL_DIR = join(homedir(), '.sigil');
-const KEYS_DIR = join(SIGIL_DIR, 'keys');
+const SIEGEL_DIR = join(homedir(), '.siegel');
+const KEYS_DIR = join(SIEGEL_DIR, 'keys');
 
 /**
  * Generate a new Ed25519 keypair
