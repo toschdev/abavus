@@ -10,6 +10,7 @@ import { Identity } from '../core/index.js';
 import { Chronicle } from '../chronicle/index.js';
 import { CompleteChronicle } from '../chronicle/complete.js';
 import { Snapshot, Fork, diffSnapshots } from '../snapshot/index.js';
+import { importSession, importAllSessions, watchSessions, getImportStats } from '../integrations/openclaw.js';
 import { readFileSync, existsSync } from 'fs';
 import { homedir } from 'os';
 import { join } from 'path';
@@ -61,6 +62,12 @@ Snapshots:
 Fork:
   fork <snapshot-id> [name]   Create new agent from snapshot
   lineage [snapshot-id]       Show lineage chain
+
+OpenClaw Integration:
+  import                      Import all OpenClaw sessions (incremental)
+  import:session <id>         Import a specific session
+  import:watch                Watch and import in real-time
+  import:stats                Show import statistics
 
 Options:
   --identity, -i <name>    Use a specific identity (default: 'default')
@@ -492,6 +499,88 @@ async function main() {
       } catch (e) {
         console.error(`Error: ${e.message}`);
         process.exit(1);
+      }
+      break;
+    }
+
+    // ==================== OPENCLAW INTEGRATION ====================
+    case 'import': {
+      if (!Identity.exists(identityName)) {
+        console.error(`Identity '${identityName}' not found.`);
+        process.exit(1);
+      }
+
+      const identity = Identity.load(identityName);
+      const chronicle = new CompleteChronicle(chronicleName).init();
+      
+      console.log('Importing OpenClaw sessions...\n');
+      const result = importAllSessions(chronicle, identity, { verbose: true });
+      
+      console.log(`\n✓ Done`);
+      console.log(`  Sessions processed: ${result.sessionsProcessed}`);
+      console.log(`  Sessions updated: ${result.sessionsUpdated}`);
+      console.log(`  Entries imported: ${result.totalEntriesImported}`);
+      break;
+    }
+
+    case 'import:session': {
+      const sessionId = args[1];
+      if (!sessionId) {
+        console.error('Usage: siegel import:session <session-id>');
+        process.exit(1);
+      }
+
+      if (!Identity.exists(identityName)) {
+        console.error(`Identity '${identityName}' not found.`);
+        process.exit(1);
+      }
+
+      const identity = Identity.load(identityName);
+      const chronicle = new CompleteChronicle(chronicleName).init();
+      
+      console.log(`Importing session ${sessionId}...`);
+      const result = importSession(sessionId, chronicle, identity, { verbose: true });
+      
+      console.log(`\n✓ Imported ${result.entriesImported} entries`);
+      break;
+    }
+
+    case 'import:watch': {
+      if (!Identity.exists(identityName)) {
+        console.error(`Identity '${identityName}' not found.`);
+        process.exit(1);
+      }
+
+      const identity = Identity.load(identityName);
+      const chronicle = new CompleteChronicle(chronicleName).init();
+      
+      const interval = parseInt(args[1]) || 30;
+      console.log(`Starting watch mode (${interval}s interval)...`);
+      console.log('Press Ctrl+C to stop.\n');
+      
+      watchSessions(chronicle, identity, { interval: interval * 1000, verbose: true });
+      
+      // Keep running
+      process.on('SIGINT', () => {
+        console.log('\nStopping...');
+        process.exit(0);
+      });
+      break;
+    }
+
+    case 'import:stats': {
+      const stats = getImportStats();
+      
+      console.log('Import Statistics:');
+      console.log(`  Sessions tracked: ${stats.sessionsTracked}`);
+      console.log(`  Total imported: ${stats.totalImported}`);
+      console.log(`  Last run: ${stats.lastRun || 'never'}`);
+      
+      if (stats.sessionsTracked > 0) {
+        console.log('\nPer-session:');
+        for (const [id, info] of Object.entries(stats.sessions)) {
+          console.log(`  ${id.slice(0,8)}...: ${info.count} entries, offset ${info.lastOffset}`);
+        }
       }
       break;
     }
