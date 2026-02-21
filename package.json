@@ -1,11 +1,11 @@
 {
-  "name": "sigil",
+  "name": "siegel",
   "version": "0.1.0",
   "description": "Cryptographic identity and provenance for AI agents",
   "type": "module",
   "main": "core/index.js",
   "bin": {
-    "sigil": "./cli/sigil.js"
+    "siegel": "./cli/siegel.js"
   },
   "scripts": {
     "test": "node --test",

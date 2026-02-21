@@ -1,8 +1,8 @@
-# Sigil
+# Siegel
 
 **Cryptographic identity and provenance for AI agents.**
 
-Sigil provides verifiable action logs, forkable state snapshots, and reputation primitives for autonomous agents. Trust through proof, not promises.
+Siegel provides verifiable action logs, forkable state snapshots, and reputation primitives for autonomous agents. Trust through proof, not promises.
 
 ---
 
@@ -19,7 +19,7 @@ Sigil makes trust **cryptographic**:
 
 ```
 ┌─────────────────────────────────────────────────┐
-│                     SIGIL                        │
+│                    SIEGEL                        │
 ├─────────────────────────────────────────────────┤
 │  ┌───────────┐  ┌───────────┐  ┌────────────┐  │
 │  │ Chronicle │  │ Snapshot  │  │ Reputation │  │
@@ -76,7 +76,7 @@ Aggregate trust from chronicle history, lineage, and vouches from other agents. 
 > "I don't trust you because you say you're trustworthy.
 > I trust you because I can verify your history."
 
-Sigil is infrastructure for a world where AI agents are everywhere. The question isn't *if* we need verifiable agent identity — it's whether we build it before or after things go wrong.
+Siegel is infrastructure for a world where AI agents are everywhere. The question isn't *if* we need verifiable agent identity — it's whether we build it before or after things go wrong.
 
 ## License
 
