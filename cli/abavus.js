@@ -11,6 +11,7 @@ import { SQLiteChronicle } from '../chronicle/sqlite.js';
 import { SemanticChronicle } from '../chronicle/semantic.js';
 import { QualityChronicle } from '../chronicle/quality.js';
 import { Reputation } from '../reputation/index.js';
+import { Snapshot, Fork, diffSnapshots } from '../snapshot/index.js';
 import { AbavusDaemon } from '../lib/daemon.js';
 import { quickImport, getImportStats } from '../integrations/openclaw-sqlite.js';
 import { homedir } from 'os';
@@ -80,6 +81,13 @@ Sessions:
   sessions              List all sessions with stats
   sessions:rebuild      Rebuild sessions table from entries
   sessions:stats        Show aggregate session statistics
+
+Snapshots:
+  snap:create           Create a snapshot of current state
+  snap:list             List all snapshots
+  snap:show <id>        Show snapshot details
+  snap:diff <a> <b>     Compare two snapshots
+  snap:restore <id>     Restore files from snapshot
 
 Reputation:
   rep:register          Register agent identity for reputation
@@ -711,6 +719,197 @@ async function main() {
       }
 
       chronicle.close();
+      break;
+    }
+
+    // ==================== SNAPSHOTS ====================
+    case 'snap:create': {
+      const identityName = args[1] || 'thomas';
+      const reason = args[2] || 'manual';
+      
+      let identity = null;
+      if (Identity.exists(identityName)) {
+        identity = Identity.load(identityName);
+      }
+
+      const chronicle = new SQLiteChronicle();
+      await chronicle.init();
+
+      console.log('Creating snapshot...');
+      
+      const snapshot = await Snapshot.capture({
+        identity,
+        chronicle,
+        metadata: { reason }
+      });
+
+      if (identity) {
+        snapshot.sign(identity);
+      }
+
+      const savedPath = snapshot.save();
+      
+      console.log(`✓ Snapshot created: ${snapshot.id}`);
+      console.log(`  Files: ${Object.keys(snapshot.files).length}`);
+      console.log(`  Chronicle head: ${snapshot.chronicle?.head?.slice(0, 12) || 'N/A'}`);
+      console.log(`  Signed: ${snapshot.signature ? 'Yes' : 'No'}`);
+      console.log(`  Saved to: ${savedPath}`);
+
+      chronicle.close();
+      break;
+    }
+
+    case 'snap:list': {
+      const snapshots = Snapshot.list();
+      
+      if (snapshots.length === 0) {
+        console.log('No snapshots found. Create one with: abavus snap:create');
+        break;
+      }
+
+      console.log('Snapshots:\n');
+      for (const snap of snapshots) {
+        const date = new Date(snap.created).toLocaleString('de-DE', { 
+          dateStyle: 'short', 
+          timeStyle: 'short' 
+        });
+        console.log(`${snap.id}`);
+        console.log(`  Created: ${date}`);
+        console.log(`  Agent: ${snap.agent || 'Unknown'}`);
+        console.log(`  Files: ${snap.files} | Entries: ${snap.entries || '?'}`);
+        console.log(`  Generation: ${snap.generation}`);
+        console.log('');
+      }
+
+      break;
+    }
+
+    case 'snap:show': {
+      const snapshotId = args[1];
+      
+      if (!snapshotId) {
+        console.error('Usage: abavus snap:show <snapshot-id>');
+        process.exit(1);
+      }
+
+      try {
+        const snapshot = Snapshot.load(snapshotId);
+        
+        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        console.log(`Snapshot: ${snapshot.id}`);
+        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        console.log(`Created:    ${snapshot.created}`);
+        console.log(`Version:    ${snapshot.version}`);
+        console.log(`Signed:     ${snapshot.signature ? 'Yes' : 'No'}`);
+        console.log('');
+        
+        if (snapshot.agent) {
+          console.log('Agent:');
+          console.log(`  ID:   ${snapshot.agent.id}`);
+          console.log(`  Name: ${snapshot.agent.name}`);
+        }
+        
+        if (snapshot.chronicle) {
+          console.log('');
+          console.log('Chronicle:');
+          console.log(`  Head:    ${snapshot.chronicle.head?.slice(0, 16)}...`);
+          console.log(`  Entries: ${snapshot.chronicle.entries}`);
+        }
+        
+        console.log('');
+        console.log('Files:');
+        for (const [path, info] of Object.entries(snapshot.files)) {
+          console.log(`  ${path} (${info.size} bytes)`);
+        }
+        
+        if (snapshot.lineage?.parent) {
+          console.log('');
+          console.log('Lineage:');
+          console.log(`  Parent:     ${snapshot.lineage.parent}`);
+          console.log(`  Generation: ${snapshot.lineage.generation}`);
+        }
+      } catch (e) {
+        console.error(`Error: ${e.message}`);
+      }
+
+      break;
+    }
+
+    case 'snap:diff': {
+      const idA = args[1];
+      const idB = args[2];
+      
+      if (!idA || !idB) {
+        console.error('Usage: abavus snap:diff <snapshot-a> <snapshot-b>');
+        process.exit(1);
+      }
+
+      try {
+        const snapA = Snapshot.load(idA);
+        const snapB = Snapshot.load(idB);
+        const diff = diffSnapshots(snapA, snapB);
+
+        console.log(`Diff: ${idA.slice(0, 12)} → ${idB.slice(0, 12)}\n`);
+        
+        console.log('Chronicle:');
+        console.log(`  ${diff.chronicle.diverged ? '⚠ Diverged' : '✓ Same head'}`);
+        console.log(`  Entries: ${diff.chronicle.aEntries} → ${diff.chronicle.bEntries}`);
+        
+        console.log('');
+        console.log('Files:');
+        if (diff.files.added.length > 0) {
+          console.log(`  Added (${diff.files.added.length}):`);
+          diff.files.added.forEach(f => console.log(`    + ${f}`));
+        }
+        if (diff.files.removed.length > 0) {
+          console.log(`  Removed (${diff.files.removed.length}):`);
+          diff.files.removed.forEach(f => console.log(`    - ${f}`));
+        }
+        if (diff.files.modified.length > 0) {
+          console.log(`  Modified (${diff.files.modified.length}):`);
+          diff.files.modified.forEach(f => console.log(`    ~ ${f}`));
+        }
+        console.log(`  Unchanged: ${diff.files.unchanged.length}`);
+      } catch (e) {
+        console.error(`Error: ${e.message}`);
+      }
+
+      break;
+    }
+
+    case 'snap:restore': {
+      const snapshotId = args[1];
+      const targetDir = args[2] || join(homedir(), '.openclaw', 'workspace');
+      
+      if (!snapshotId) {
+        console.error('Usage: abavus snap:restore <snapshot-id> [target-dir]');
+        process.exit(1);
+      }
+
+      try {
+        const snapshot = Snapshot.load(snapshotId);
+        
+        if (!snapshot._fileContents || snapshot._fileContents.size === 0) {
+          console.error('Snapshot has no file contents to restore.');
+          break;
+        }
+
+        console.log(`Restoring ${snapshot._fileContents.size} files to ${targetDir}...`);
+        
+        // Note: This would overwrite existing files!
+        console.log('');
+        console.log('Files to restore:');
+        for (const [path] of snapshot._fileContents) {
+          console.log(`  ${path}`);
+        }
+        console.log('');
+        console.log('⚠ This would overwrite existing files!');
+        console.log('  Use --force to proceed (not implemented yet)');
+        
+      } catch (e) {
+        console.error(`Error: ${e.message}`);
+      }
+
       break;
     }
 

@@ -100,11 +100,20 @@ Append-only signed action log stored in SQLite. Every entry contains:
 - Hash of previous entry (chain)
 - Agent signature
 
-### Snapshot (`/snapshot`) *[planned]*
+### Snapshot (`/snapshot`)
 Capture agent state as a verifiable checkpoint. Fork agents with provable lineage.
 
-### Reputation (`/reputation`) *[planned]*
+- **Capture**: Memory files, chronicle state, agent identity
+- **Sign**: Cryptographic signature for verification
+- **Fork**: Create new agents with traceable lineage
+- **Diff**: Compare two snapshots
+
+### Reputation (`/reputation`)
 Trust scores from chronicle history and vouches from other agents.
+
+- **Scores**: Quality, Reliability, Efficiency
+- **Attestations**: Signed vouches from other agents
+- **Badge**: Shareable identity for social media
 
 ## Data Location
 
@@ -129,12 +138,12 @@ Trust scores from chronicle history and vouches from other agents.
 
 - [x] Core: Ed25519 keypairs & signing
 - [x] Chronicle: SQLite storage with hash chain
-- [x] Chronicle: Full-text search
-- [x] OpenClaw: Session import
-- [ ] Live logging: Real-time capture
-- [ ] Snapshot: State capture & fork
-- [ ] Reputation: Trust model
+- [x] Chronicle: Full-text search & semantic search
+- [x] OpenClaw: Session import & live watching
+- [x] Snapshot: State capture & fork protocol
+- [x] Reputation: Trust scores & attestations
 - [ ] Web UI: Browse & search
+- [ ] Blockchain: On-chain attestations
 
 ## License
 
