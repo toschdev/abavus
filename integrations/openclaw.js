@@ -1,7 +1,7 @@
 /**
- * Siegel OpenClaw Integration
+ * Abavus OpenClaw Integration
  * 
- * Imports OpenClaw session logs into Siegel Chronicle.
+ * Imports OpenClaw session logs into Abavus Chronicle.
  * Enables complete audit trail of all AI interactions.
  */
 
@@ -14,7 +14,7 @@ import { ActionTypes } from '../chronicle/schema.js';
 
 const OPENCLAW_DIR = join(homedir(), '.openclaw');
 const SESSIONS_DIR = join(OPENCLAW_DIR, 'agents', 'main', 'sessions');
-const IMPORT_STATE_PATH = join(homedir(), '.siegel', 'openclaw-import-state.json');
+const IMPORT_STATE_PATH = join(homedir(), '.abavus', 'openclaw-import-state.json');
 
 /**
  * Import state tracking - remember what we've already imported
@@ -65,7 +65,7 @@ function parseSessionFile(filepath) {
 }
 
 /**
- * Convert OpenClaw message to Siegel chronicle entries
+ * Convert OpenClaw message to Abavus chronicle entries
  */
 function messageToEntries(msg, sessionMeta) {
   const entries = [];

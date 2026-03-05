@@ -1,5 +1,5 @@
 /**
- * Siegel Chronicle Schema - Complete Logging
+ * Abavus Chronicle Schema - Complete Logging
  * 
  * Defines the structure for full audit trail:
  * - Every LLM turn (prompt, response, thinking)
@@ -212,7 +212,7 @@ export const SessionStartSchema = {
   sessionKey: 'string?',
   
   agent: {
-    id: 'string',            // Siegel agent ID
+    id: 'string',            // Abavus agent ID
     name: 'string',
     publicKey: 'string'      // Base64
   },

@@ -1,15 +1,15 @@
 {
-  "name": "siegel",
+  "name": "abavus",
   "version": "0.2.0",
   "description": "Cryptographic identity and provenance for AI agents",
   "type": "module",
   "main": "core/index.js",
   "bin": {
-    "siegel": "./cli/siegel.js"
+    "abavus": "./cli/abavus.js"
   },
   "scripts": {
     "test": "node --test",
-    "cli": "node cli/siegel.js"
+    "cli": "node cli/abavus.js"
   },
   "keywords": [
     "ai",

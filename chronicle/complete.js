@@ -1,5 +1,5 @@
 /**
- * Siegel Complete Chronicle - Full audit trail with deduplication
+ * Abavus Complete Chronicle - Full audit trail with deduplication
  * 
  * Extends base Chronicle with:
  * - Content deduplication (system prompts, injected files)
@@ -16,7 +16,7 @@ import { gzipSync, gunzipSync } from 'zlib';
 import { Chronicle, Entry } from './index.js';
 import { ActionTypes, DeduplicationConfig } from './schema.js';
 
-const SIEGEL_DIR = join(homedir(), '.siegel');
+const SIEGEL_DIR = join(homedir(), '.abavus');
 
 /**
  * Content-addressed store for deduplication

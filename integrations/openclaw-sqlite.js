@@ -1,5 +1,5 @@
 /**
- * Siegel OpenClaw Integration - SQLite Version
+ * Abavus OpenClaw Integration - SQLite Version
  * 
  * Imports OpenClaw session logs into SQLite Chronicle.
  */
@@ -13,7 +13,7 @@ import { ActionTypes } from '../chronicle/schema.js';
 
 const OPENCLAW_DIR = join(homedir(), '.openclaw');
 const SESSIONS_DIR = join(OPENCLAW_DIR, 'agents', 'main', 'sessions');
-const SIEGEL_DIR = join(homedir(), '.siegel');
+const SIEGEL_DIR = join(homedir(), '.abavus');
 const IMPORT_STATE_PATH = join(SIEGEL_DIR, 'openclaw-import-state.json');
 
 /**
@@ -65,7 +65,7 @@ function parseSessionFile(filepath) {
 }
 
 /**
- * Convert OpenClaw message to Siegel entries
+ * Convert OpenClaw message to Abavus entries
  */
 function messageToEntries(msg, sessionMeta) {
   const entries = [];

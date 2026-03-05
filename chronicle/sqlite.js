@@ -1,5 +1,5 @@
 /**
- * Siegel Chronicle - SQLite Backend
+ * Abavus Chronicle - SQLite Backend
  * 
  * Same API as JSONL Chronicle, but with SQLite for:
  * - Fast queries (by action, time range, session)
@@ -16,7 +16,7 @@ import { join, dirname } from 'path';
 import { homedir } from 'os';
 import { hash, randomId } from '../core/index.js';
 
-const SIEGEL_DIR = join(homedir(), '.siegel');
+const SIEGEL_DIR = join(homedir(), '.abavus');
 const DEFAULT_DB_PATH = join(SIEGEL_DIR, 'chronicle.db');
 
 let SQL = null;

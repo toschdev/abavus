@@ -13,7 +13,7 @@ import { join, dirname } from 'path';
 import { homedir } from 'os';
 import { hash, randomId } from '../core/index.js';
 
-const SIEGEL_DIR = join(homedir(), '.siegel');
+const SIEGEL_DIR = join(homedir(), '.abavus');
 const CHRONICLES_DIR = join(SIEGEL_DIR, 'chronicles');
 
 /**

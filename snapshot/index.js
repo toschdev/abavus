@@ -1,5 +1,5 @@
 /**
- * Siegel Snapshot - Agent state capture and fork protocol
+ * Abavus Snapshot - Agent state capture and fork protocol
  * 
  * A snapshot captures:
  * - Agent identity
@@ -22,7 +22,7 @@ import { gzipSync, gunzipSync } from 'zlib';
 import { Identity, hash, randomId } from '../core/index.js';
 import { Chronicle } from '../chronicle/index.js';
 
-const SIEGEL_DIR = join(homedir(), '.siegel');
+const SIEGEL_DIR = join(homedir(), '.abavus');
 const SNAPSHOTS_DIR = join(SIEGEL_DIR, 'snapshots');
 
 /**

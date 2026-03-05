@@ -11,7 +11,7 @@ import { join, dirname } from 'path';
 import { homedir } from 'os';
 
 // Default paths
-const SIEGEL_DIR = join(homedir(), '.siegel');
+const SIEGEL_DIR = join(homedir(), '.abavus');
 const KEYS_DIR = join(SIEGEL_DIR, 'keys');
 
 /**

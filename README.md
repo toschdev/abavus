@@ -1,8 +1,8 @@
-# Siegel
+# Abavus
 
 **Cryptographic identity and provenance for AI agents.**
 
-Siegel provides verifiable action logs, forkable state snapshots, and reputation primitives for autonomous agents. Trust through proof, not promises.
+Abavus provides verifiable action logs, forkable state snapshots, and reputation primitives for autonomous agents. Trust through proof, not promises.
 
 ---
 
@@ -10,7 +10,7 @@ Siegel provides verifiable action logs, forkable state snapshots, and reputation
 
 Today's AI agents operate on social trust: you believe them because they *sound* reasonable. That doesn't scale.
 
-Sigil makes trust **cryptographic**:
+Abavus makes trust **cryptographic**:
 - **Prove** what an agent did (and didn't do)
 - **Verify** where an agent comes from (lineage)
 - **Attest** an agent's track record (reputation)
@@ -19,7 +19,7 @@ Sigil makes trust **cryptographic**:
 
 ```
 ┌─────────────────────────────────────────────────┐
-│                    SIEGEL                        │
+│                    ABAVUS                        │
 ├─────────────────────────────────────────────────┤
 │  ┌───────────┐  ┌───────────┐  ┌────────────┐  │
 │  │ Chronicle │  │ Snapshot  │  │ Reputation │  │
@@ -76,7 +76,7 @@ Aggregate trust from chronicle history, lineage, and vouches from other agents. 
 > "I don't trust you because you say you're trustworthy.
 > I trust you because I can verify your history."
 
-Siegel is infrastructure for a world where AI agents are everywhere. The question isn't *if* we need verifiable agent identity — it's whether we build it before or after things go wrong.
+Abavus is infrastructure for a world where AI agents are everywhere. The question isn't *if* we need verifiable agent identity — it's whether we build it before or after things go wrong.
 
 ## License
 

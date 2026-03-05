@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Siegel CLI - Command-line interface for Siegel
+ * Abavus CLI - Command-line interface for Abavus
  * 
  * Cryptographic identity, complete logging, snapshots & forks
  */
@@ -38,7 +38,7 @@ const command = positional[0];
 const args = positional;
 
 const help = `
-siegel - Cryptographic identity and provenance for AI agents
+abavus - Cryptographic identity and provenance for AI agents
 
 Identity:
   init [name]           Create a new identity (default: 'default')
@@ -70,11 +70,11 @@ Options:
   --help, -h               Show this help
 
 Examples:
-  siegel init thomas
-  siegel import
-  siegel search "web_search"
-  siegel tools
-  siegel by-session abc123
+  abavus init thomas
+  abavus import
+  abavus search "web_search"
+  abavus tools
+  abavus by-session abc123
 `;
 
 async function main() {
@@ -90,14 +90,14 @@ async function main() {
       identity.save(name);
       console.log(`✓ Created identity '${name}'`);
       console.log(`  ID: ${identity.id}`);
-      console.log(`  Keys saved to ~/.siegel/keys/${name}.*`);
+      console.log(`  Keys saved to ~/.abavus/keys/${name}.*`);
       break;
     }
 
     case 'id': {
       const name = args[1] || identityName;
       if (!Identity.exists(name)) {
-        console.error(`Identity '${name}' not found. Run 'siegel init ${name}' first.`);
+        console.error(`Identity '${name}' not found. Run 'abavus init ${name}' first.`);
         process.exit(1);
       }
       const identity = Identity.load(name);
@@ -124,12 +124,12 @@ async function main() {
       const payloadArg = args[2];
       
       if (!action) {
-        console.error('Usage: siegel log <action> [payload-json]');
+        console.error('Usage: abavus log <action> [payload-json]');
         process.exit(1);
       }
 
       if (!Identity.exists(identityName)) {
-        console.error(`Identity '${identityName}' not found. Run 'siegel init' first.`);
+        console.error(`Identity '${identityName}' not found. Run 'abavus init' first.`);
         process.exit(1);
       }
 
@@ -178,7 +178,7 @@ async function main() {
     case 'search': {
       const query = args[1];
       if (!query) {
-        console.error('Usage: siegel search <query>');
+        console.error('Usage: abavus search <query>');
         process.exit(1);
       }
 
@@ -260,7 +260,7 @@ async function main() {
       const limit = parseInt(args[2]) || 50;
       
       if (!action) {
-        console.error('Usage: siegel by-action <action> [limit]');
+        console.error('Usage: abavus by-action <action> [limit]');
         process.exit(1);
       }
 
@@ -287,7 +287,7 @@ async function main() {
       const limit = parseInt(args[2]) || 200;
       
       if (!sessionId) {
-        console.error('Usage: siegel by-session <session-id> [limit]');
+        console.error('Usage: abavus by-session <session-id> [limit]');
         process.exit(1);
       }
 
@@ -315,8 +315,8 @@ async function main() {
       const to = args[2];
       
       if (!from || !to) {
-        console.error('Usage: siegel by-time <from-iso> <to-iso>');
-        console.error('Example: siegel by-time 2026-03-01 2026-03-05');
+        console.error('Usage: abavus by-time <from-iso> <to-iso>');
+        console.error('Example: abavus by-time 2026-03-01 2026-03-05');
         process.exit(1);
       }
 
