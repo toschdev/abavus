@@ -3,14 +3,14 @@
 /**
  * Abavus CLI - Command-line interface for Abavus
  * 
- * Cryptographic identity, complete logging, snapshots & forks
+ * Cryptographic identity, complete logging, semantic search
  */
 
 import { Identity } from '../core/index.js';
-import { Chronicle } from '../chronicle/index.js';
 import { SQLiteChronicle } from '../chronicle/sqlite.js';
-import { quickImport, importAllSessions, getImportStats } from '../integrations/openclaw-sqlite.js';
-import { readFileSync, existsSync } from 'fs';
+import { SemanticChronicle } from '../chronicle/semantic.js';
+import { AbavusDaemon } from '../lib/daemon.js';
+import { quickImport, getImportStats } from '../integrations/openclaw-sqlite.js';
 import { homedir } from 'os';
 import { join } from 'path';
 
@@ -20,6 +20,7 @@ const rawArgs = process.argv.slice(2);
 let identityName = 'default';
 let verbose = false;
 let force = false;
+let ollamaUrl = process.env.OLLAMA_URL || 'http://localhost:11434';
 const positional = [];
 
 for (let i = 0; i < rawArgs.length; i++) {
@@ -29,6 +30,8 @@ for (let i = 0; i < rawArgs.length; i++) {
     verbose = true;
   } else if (rawArgs[i] === '-f' || rawArgs[i] === '--force') {
     force = true;
+  } else if (rawArgs[i] === '--ollama') {
+    ollamaUrl = rawArgs[++i];
   } else {
     positional.push(rawArgs[i]);
   }
@@ -43,38 +46,44 @@ abavus - Cryptographic identity and provenance for AI agents
 Identity:
   init [name]           Create a new identity (default: 'default')
   id [name]             Show identity info
-  export                Export public identity (safe to share)
 
-Chronicle (SQLite):
-  log <action> [json]   Append an entry to the chronicle
+Chronicle:
   recent [n]            Show last n entries (default: 20)
-  search <query>        Full-text search across all entries
-  stats                 Show chronicle statistics
+  search <query>        Full-text search (LIKE)
+  stats                 Show statistics
   verify                Verify chain integrity
-  
-Query:
-  by-action <action>    Get entries by action type
-  by-session <id>       Get entries by session
-  by-time <from> <to>   Get entries in time range
-  tools                 Show tool usage statistics
 
-OpenClaw Import:
-  import                Import all OpenClaw sessions (incremental)
-  import --force        Re-import everything from scratch
-  import:stats          Show import statistics
+Semantic Search:
+  ask <query>           Semantic search using embeddings
+  embed                 Generate embeddings for all entries
+  embed:stats           Show embedding coverage
+  similar <entry-id>    Find similar entries
+
+Live:
+  watch                 Watch & import in real-time (Ctrl+C to stop)
+  watch --embed         Also generate embeddings for new entries
+
+Query:
+  by-action <action>    Filter by action type
+  by-session <id>       Filter by session
+  tools                 Tool usage statistics
+
+Import:
+  import                Import OpenClaw sessions (incremental)
+  import --force        Re-import everything
 
 Options:
-  --identity, -i <name>    Use a specific identity (default: 'default')
+  --identity, -i <name>    Use specific identity
+  --ollama <url>           Ollama URL (default: localhost:11434)
   --verbose, -v            Verbose output
   --force, -f              Force re-import
   --help, -h               Show this help
 
 Examples:
-  abavus init thomas
   abavus import
-  abavus search "web_search"
+  abavus ask "What did we discuss about embeddings?"
+  abavus watch --embed
   abavus tools
-  abavus by-session abc123
 `;
 
 async function main() {
@@ -90,84 +99,35 @@ async function main() {
       identity.save(name);
       console.log(`✓ Created identity '${name}'`);
       console.log(`  ID: ${identity.id}`);
-      console.log(`  Keys saved to ~/.abavus/keys/${name}.*`);
       break;
     }
 
     case 'id': {
       const name = args[1] || identityName;
       if (!Identity.exists(name)) {
-        console.error(`Identity '${name}' not found. Run 'abavus init ${name}' first.`);
+        console.error(`Identity '${name}' not found. Run 'abavus init' first.`);
         process.exit(1);
       }
       const identity = Identity.load(name);
       console.log(`Identity: ${name}`);
       console.log(`  ID: ${identity.id}`);
       console.log(`  Created: ${identity.metadata.created || 'unknown'}`);
-      console.log(`  Public Key: ${identity.publicKey.toString('base64').slice(0, 32)}...`);
-      break;
-    }
-
-    case 'export': {
-      if (!Identity.exists(identityName)) {
-        console.error(`Identity '${identityName}' not found.`);
-        process.exit(1);
-      }
-      const identity = Identity.load(identityName);
-      console.log(JSON.stringify(identity.toPublic(), null, 2));
       break;
     }
 
     // ==================== CHRONICLE ====================
-    case 'log': {
-      const action = args[1];
-      const payloadArg = args[2];
-      
-      if (!action) {
-        console.error('Usage: abavus log <action> [payload-json]');
-        process.exit(1);
-      }
-
-      if (!Identity.exists(identityName)) {
-        console.error(`Identity '${identityName}' not found. Run 'abavus init' first.`);
-        process.exit(1);
-      }
-
-      const identity = Identity.load(identityName);
-      const chronicle = new SQLiteChronicle();
-      await chronicle.init();
-      
-      let payload = {};
-      if (payloadArg) {
-        try {
-          payload = JSON.parse(payloadArg);
-        } catch (e) {
-          payload = { message: payloadArg };
-        }
-      }
-
-      const entry = chronicle.append(action, payload, identity);
-      console.log(`✓ Logged: ${action}`);
-      console.log(`  Entry ID: ${entry.id}`);
-      console.log(`  Hash: ${entry.entryHash.slice(0, 16)}...`);
-      chronicle.close();
-      break;
-    }
-
     case 'recent': {
       const n = parseInt(args[1]) || 20;
       const chronicle = new SQLiteChronicle();
       await chronicle.init();
       
       const entries = chronicle.recent(n);
-      
       if (entries.length === 0) {
         console.log('Chronicle is empty.');
         break;
       }
 
       console.log(`Last ${entries.length} entries:\n`);
-      
       for (const entry of entries) {
         printEntry(entry);
       }
@@ -186,16 +146,40 @@ async function main() {
       await chronicle.init();
       
       const entries = chronicle.search(query);
-      
       if (entries.length === 0) {
         console.log('No results found.');
         break;
       }
 
       console.log(`Found ${entries.length} entries:\n`);
-      
       for (const entry of entries) {
         printEntry(entry);
+      }
+      chronicle.close();
+      break;
+    }
+
+    case 'stats': {
+      const chronicle = new SQLiteChronicle();
+      await chronicle.init();
+      const stats = chronicle.stats();
+      
+      console.log('Chronicle Statistics:');
+      console.log(`  Total entries: ${stats.entries}`);
+      console.log(`  Database size: ${formatBytes(stats.dbSize)}`);
+      
+      if (stats.head) {
+        console.log(`  Head hash: ${stats.head.slice(0, 16)}...`);
+        console.log(`  First: ${stats.first}`);
+        console.log(`  Last: ${stats.last}`);
+      }
+      
+      if (Object.keys(stats.actions).length > 0) {
+        console.log('\nActions:');
+        const sorted = Object.entries(stats.actions).sort((a, b) => b[1] - a[1]);
+        for (const [action, count] of sorted) {
+          console.log(`  ${action}: ${count}`);
+        }
       }
       chronicle.close();
       break;
@@ -216,10 +200,9 @@ async function main() {
       
       if (result.valid) {
         console.log(`✓ Valid chain with ${result.entries} entries`);
-        console.log(`  Head: ${result.head?.slice(0, 16)}...`);
       } else {
         console.log(`✗ Invalid chain`);
-        for (const error of result.errors) {
+        for (const error of result.errors.slice(0, 5)) {
           console.log(`  - ${error}`);
         }
         process.exit(1);
@@ -228,29 +211,151 @@ async function main() {
       break;
     }
 
-    case 'stats': {
-      const chronicle = new SQLiteChronicle();
+    // ==================== SEMANTIC ====================
+    case 'ask': {
+      const query = args.slice(1).join(' ');
+      if (!query) {
+        console.error('Usage: abavus ask <query>');
+        process.exit(1);
+      }
+
+      const chronicle = new SemanticChronicle(undefined, { ollamaUrl });
       await chronicle.init();
-      const stats = chronicle.stats();
       
-      console.log('Chronicle Statistics:');
-      console.log(`  Total entries: ${stats.entries}`);
-      console.log(`  Database size: ${formatBytes(stats.dbSize)}`);
-      
-      if (stats.head) {
-        console.log(`  Head hash: ${stats.head.slice(0, 16)}...`);
-        console.log(`  First entry: ${stats.first}`);
-        console.log(`  Last entry: ${stats.last}`);
+      const embStats = chronicle.embeddingStats();
+      if (embStats.embeddedEntries === 0) {
+        console.log('No embeddings found. Run "abavus embed" first.');
+        chronicle.close();
+        break;
       }
+
+      console.log(`Searching ${embStats.embeddedEntries} embedded entries...\n`);
       
-      if (Object.keys(stats.actions).length > 0) {
-        console.log('\nActions:');
-        const sorted = Object.entries(stats.actions).sort((a, b) => b[1] - a[1]);
-        for (const [action, count] of sorted) {
-          console.log(`  ${action}: ${count}`);
+      try {
+        const results = await chronicle.semanticSearch(query, { limit: 10, threshold: 0.3 });
+        
+        if (results.length === 0) {
+          console.log('No similar entries found.');
+        } else {
+          for (const result of results) {
+            const score = (result.score * 100).toFixed(0);
+            console.log(`[${result.id.slice(0, 8)}] ${score}% match`);
+            printEntry(result, true);
+          }
         }
+      } catch (e) {
+        console.error(`Error: ${e.message}`);
+        console.log('\nMake sure Ollama is running with an embedding model.');
+        console.log(`Tried: ${ollamaUrl}`);
       }
+      
       chronicle.close();
+      break;
+    }
+
+    case 'embed': {
+      const chronicle = new SemanticChronicle(undefined, { ollamaUrl });
+      await chronicle.init();
+      
+      console.log('Generating embeddings...');
+      console.log(`Using: ${ollamaUrl}\n`);
+
+      try {
+        const result = await chronicle.embedAll({
+          onProgress: (done, total) => {
+            process.stdout.write(`\r  Progress: ${done}/${total} (${(done/total*100).toFixed(0)}%)`);
+          }
+        });
+        
+        console.log(`\n\n✓ Embedded ${result.embedded} entries`);
+        
+        const stats = chronicle.embeddingStats();
+        console.log(`  Coverage: ${stats.coverage}`);
+      } catch (e) {
+        console.error(`\nError: ${e.message}`);
+        console.log('\nMake sure Ollama is running:');
+        console.log('  ollama serve');
+        console.log('  ollama pull nomic-embed-text');
+      }
+      
+      chronicle.close();
+      break;
+    }
+
+    case 'embed:stats': {
+      const chronicle = new SemanticChronicle(undefined, { ollamaUrl });
+      await chronicle.init();
+      
+      const stats = chronicle.embeddingStats();
+      console.log('Embedding Statistics:');
+      console.log(`  Total entries: ${stats.totalEntries}`);
+      console.log(`  Embedded: ${stats.embeddedEntries}`);
+      console.log(`  Coverage: ${stats.coverage}`);
+      if (Object.keys(stats.models).length > 0) {
+        console.log(`  Models: ${JSON.stringify(stats.models)}`);
+      }
+      
+      chronicle.close();
+      break;
+    }
+
+    case 'similar': {
+      const entryId = args[1];
+      if (!entryId) {
+        console.error('Usage: abavus similar <entry-id>');
+        process.exit(1);
+      }
+
+      const chronicle = new SemanticChronicle(undefined, { ollamaUrl });
+      await chronicle.init();
+      
+      try {
+        const results = await chronicle.findSimilarEntries(entryId, { limit: 10 });
+        
+        if (results.length === 0) {
+          console.log('No similar entries found.');
+        } else {
+          console.log(`Entries similar to ${entryId}:\n`);
+          for (const result of results) {
+            const score = (result.score * 100).toFixed(0);
+            console.log(`[${result.id.slice(0, 8)}] ${score}% similar`);
+            printEntry(result, true);
+          }
+        }
+      } catch (e) {
+        console.error(`Error: ${e.message}`);
+      }
+      
+      chronicle.close();
+      break;
+    }
+
+    // ==================== LIVE ====================
+    case 'watch': {
+      const embedOnInsert = args.includes('--embed');
+      
+      console.log('Starting Abavus daemon...');
+      if (embedOnInsert) {
+        console.log('Embeddings: enabled (slower, but real-time semantic search)');
+      }
+      console.log('Press Ctrl+C to stop.\n');
+
+      const daemon = new AbavusDaemon({
+        ollamaUrl,
+        embedOnInsert,
+        verbose: true
+      });
+
+      await daemon.start();
+
+      // Handle shutdown
+      process.on('SIGINT', () => {
+        daemon.stop();
+        process.exit(0);
+      });
+
+      // Keep running
+      await new Promise(() => {});
       break;
     }
 
@@ -268,13 +373,12 @@ async function main() {
       await chronicle.init();
       
       const entries = chronicle.byAction(action, limit);
-      
       if (entries.length === 0) {
-        console.log(`No entries found for action '${action}'.`);
+        console.log(`No entries found for '${action}'.`);
         break;
       }
 
-      console.log(`${entries.length} entries with action '${action}':\n`);
+      console.log(`${entries.length} entries:\n`);
       for (const entry of entries) {
         printEntry(entry);
       }
@@ -284,53 +388,21 @@ async function main() {
 
     case 'by-session': {
       const sessionId = args[1];
-      const limit = parseInt(args[2]) || 200;
-      
       if (!sessionId) {
-        console.error('Usage: abavus by-session <session-id> [limit]');
+        console.error('Usage: abavus by-session <session-id>');
         process.exit(1);
       }
 
       const chronicle = new SQLiteChronicle();
       await chronicle.init();
       
-      // Support partial session IDs
-      const entries = chronicle.bySession(sessionId, limit);
-      
+      const entries = chronicle.bySession(sessionId, 200);
       if (entries.length === 0) {
-        console.log(`No entries found for session '${sessionId}'.`);
+        console.log(`No entries for session '${sessionId}'.`);
         break;
       }
 
-      console.log(`${entries.length} entries in session '${sessionId.slice(0, 8)}...':\n`);
-      for (const entry of entries) {
-        printEntry(entry);
-      }
-      chronicle.close();
-      break;
-    }
-
-    case 'by-time': {
-      const from = args[1];
-      const to = args[2];
-      
-      if (!from || !to) {
-        console.error('Usage: abavus by-time <from-iso> <to-iso>');
-        console.error('Example: abavus by-time 2026-03-01 2026-03-05');
-        process.exit(1);
-      }
-
-      const chronicle = new SQLiteChronicle();
-      await chronicle.init();
-      
-      const entries = chronicle.byTimeRange(from, to);
-      
-      if (entries.length === 0) {
-        console.log('No entries found in time range.');
-        break;
-      }
-
-      console.log(`${entries.length} entries from ${from} to ${to}:\n`);
+      console.log(`${entries.length} entries:\n`);
       for (const entry of entries) {
         printEntry(entry);
       }
@@ -339,22 +411,17 @@ async function main() {
     }
 
     case 'tools': {
-      const since = args[1]; // Optional: date filter
-      
+      const since = args[1];
       const chronicle = new SQLiteChronicle();
       await chronicle.init();
       
       const stats = chronicle.toolStats(since);
-      
       if (stats.length === 0) {
         console.log('No tool calls recorded.');
         break;
       }
 
-      console.log('Tool Usage Statistics:');
-      if (since) console.log(`  (since ${since})\n`);
-      else console.log();
-      
+      console.log('Tool Usage:\n');
       for (const { tool_name, count } of stats) {
         const bar = '█'.repeat(Math.min(count, 50));
         console.log(`  ${tool_name.padEnd(20)} ${count.toString().padStart(5)} ${bar}`);
@@ -363,63 +430,19 @@ async function main() {
       break;
     }
 
-    case 'sessions': {
-      const limit = parseInt(args[1]) || 20;
-      
-      const chronicle = new SQLiteChronicle();
-      await chronicle.init();
-      
-      const sessions = chronicle.sessionStats(limit);
-      
-      if (sessions.length === 0) {
-        console.log('No sessions recorded.');
-        break;
-      }
-
-      console.log(`${sessions.length} sessions:\n`);
-      for (const s of sessions) {
-        console.log(`[${s.session_id.slice(0, 8)}...]`);
-        console.log(`  Started: ${s.started}`);
-        console.log(`  Ended:   ${s.ended}`);
-        console.log(`  Entries: ${s.entries}`);
-        console.log();
-      }
-      chronicle.close();
-      break;
-    }
-
     // ==================== IMPORT ====================
     case 'import': {
       console.log('Importing OpenClaw sessions...\n');
-      const result = await quickImport({ verbose: true, force });
+      await quickImport({ verbose: true, force });
       break;
     }
 
     case 'import:stats': {
       const stats = getImportStats();
-      
       console.log('Import Statistics:');
-      console.log(`  Sessions tracked: ${stats.sessionsTracked}`);
+      console.log(`  Sessions: ${stats.sessionsTracked}`);
       console.log(`  Total imported: ${stats.totalImported}`);
       console.log(`  Last run: ${stats.lastRun || 'never'}`);
-      
-      if (stats.sessionsTracked > 0 && verbose) {
-        console.log('\nPer-session:');
-        for (const [id, info] of Object.entries(stats.sessions)) {
-          console.log(`  ${id.slice(0,8)}...: ${info.count} entries`);
-        }
-      }
-      break;
-    }
-
-    // ==================== EXPORT ====================
-    case 'export:jsonl': {
-      const chronicle = new SQLiteChronicle();
-      await chronicle.init();
-      
-      const jsonl = chronicle.exportJSONL();
-      console.log(jsonl);
-      chronicle.close();
       break;
     }
 
@@ -438,7 +461,7 @@ async function main() {
   }
 }
 
-function printEntry(entry) {
+function printEntry(entry, compact = false) {
   const time = new Date(entry.timestamp).toLocaleString('de-DE', { 
     dateStyle: 'short', 
     timeStyle: 'short' 
@@ -447,11 +470,10 @@ function printEntry(entry) {
   
   console.log(`[${entry.id.slice(0, 8)}] ${time} ${sig} ${entry.action}`);
   
-  // Show relevant payload info based on action type
   const p = entry.payload;
   if (entry.action === 'tool.call' && p.tool) {
     console.log(`  Tool: ${p.tool}`);
-    if (p.arguments && Object.keys(p.arguments).length > 0) {
+    if (!compact && p.arguments) {
       const args = JSON.stringify(p.arguments);
       console.log(`  Args: ${args.length > 80 ? args.slice(0, 80) + '...' : args}`);
     }
@@ -461,10 +483,7 @@ function printEntry(entry) {
       const preview = p.output.content.slice(0, 100).replace(/\n/g, ' ');
       console.log(`  Output: ${preview}${p.output.content.length > 100 ? '...' : ''}`);
     }
-    if (p.usage) {
-      console.log(`  Tokens: ${p.usage.inputTokens || 0} in / ${p.usage.outputTokens || 0} out`);
-    }
-  } else if (entry.action.includes('message') && p.content) {
+  } else if (p.content) {
     const preview = p.content.slice(0, 100).replace(/\n/g, ' ');
     console.log(`  ${preview}${p.content.length > 100 ? '...' : ''}`);
   }
@@ -474,8 +493,7 @@ function printEntry(entry) {
 function formatBytes(bytes) {
   if (bytes < 1024) return bytes + ' B';
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
-  if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
-  return (bytes / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
 }
 
 main().catch(err => {
