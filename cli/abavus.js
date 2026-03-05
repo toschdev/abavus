@@ -574,6 +574,51 @@ async function main() {
       break;
     }
 
+    case 'rate-manual': {
+      const sessionId = args[1];
+      const relevance = args[2] ? parseInt(args[2]) : null;
+      const clarity = args[3] ? parseInt(args[3]) : null;
+      
+      if (!sessionId) {
+        console.error('Usage: abavus rate-manual <session-id> [relevance] [clarity]');
+        console.error('  relevance: 0-100 (answer quality)');
+        console.error('  clarity: 0-100 (question clarity)');
+        process.exit(1);
+      }
+
+      const chronicle = new QualityChronicle(undefined, { ollamaUrl });
+      await chronicle.init();
+
+      const result = chronicle.rateSessionManual(sessionId, relevance, clarity);
+      
+      console.log(JSON.stringify({
+        ok: true,
+        sessionId: result.sessionId,
+        relevance: result.relevance,
+        clarity: result.clarity
+      }));
+
+      chronicle.close();
+      break;
+    }
+
+    case 'rate:session-stats': {
+      const chronicle = new QualityChronicle(undefined, { ollamaUrl });
+      await chronicle.init();
+
+      const stats = chronicle.sessionRatingStats();
+      
+      console.log('Session Rating Statistics:');
+      console.log(`  Total rated: ${stats.total}`);
+      if (stats.avgRelevance !== null) {
+        console.log(`  Avg relevance: ${stats.avgRelevance}%`);
+        console.log(`  Avg clarity: ${stats.avgClarity}%`);
+      }
+
+      chronicle.close();
+      break;
+    }
+
     // ==================== HELP ====================
     case 'help':
     case '--help':

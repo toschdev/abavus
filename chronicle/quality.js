@@ -47,6 +47,20 @@ export class QualityChronicle extends SemanticChronicle {
       )
     `);
 
+    // Manual session ratings (from hook)
+    this.db.run(`
+      CREATE TABLE IF NOT EXISTS session_ratings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT NOT NULL UNIQUE,
+        answer_relevance INTEGER,
+        question_clarity INTEGER,
+        feedback TEXT,
+        source TEXT DEFAULT 'manual',
+        rated_at TEXT
+      )
+    `);
+
+    this.db.run('CREATE INDEX IF NOT EXISTS idx_session_ratings_session ON session_ratings(session_id)');
     this.db.run('CREATE INDEX IF NOT EXISTS idx_quality_question ON quality_scores(question_entry_id)');
     this.db.run('CREATE INDEX IF NOT EXISTS idx_quality_answer ON quality_scores(answer_entry_id)');
     this.db.run('CREATE INDEX IF NOT EXISTS idx_quality_relevance ON quality_scores(answer_relevance)');
@@ -236,6 +250,64 @@ export class QualityChronicle extends SemanticChronicle {
       minClarity: vals[4],
       maxClarity: vals[5],
       distribution
+    };
+  }
+
+  /**
+   * Store manual session rating (from hook)
+   */
+  rateSessionManual(sessionId, relevance, clarity, feedback = null) {
+    this.db.run(`
+      INSERT OR REPLACE INTO session_ratings 
+      (session_id, answer_relevance, question_clarity, feedback, source, rated_at)
+      VALUES (?, ?, ?, ?, 'manual', ?)
+    `, [
+      sessionId,
+      relevance,
+      clarity,
+      feedback,
+      new Date().toISOString()
+    ]);
+    this.save();
+    return { sessionId, relevance, clarity };
+  }
+
+  /**
+   * Get session rating
+   */
+  getSessionRating(sessionId) {
+    const result = this.db.exec(
+      'SELECT * FROM session_ratings WHERE session_id = ?',
+      [sessionId]
+    );
+    if (result.length === 0 || result[0].values.length === 0) return null;
+    
+    const cols = result[0].columns;
+    const row = result[0].values[0];
+    const obj = {};
+    cols.forEach((c, i) => obj[c] = row[i]);
+    return obj;
+  }
+
+  /**
+   * Get all session ratings statistics
+   */
+  sessionRatingStats() {
+    const result = this.db.exec(`
+      SELECT 
+        COUNT(*) as total,
+        AVG(answer_relevance) as avg_relevance,
+        AVG(question_clarity) as avg_clarity
+      FROM session_ratings
+      WHERE answer_relevance IS NOT NULL
+    `);
+    
+    if (result.length === 0) return { total: 0 };
+    const [total, avgRel, avgClr] = result[0].values[0];
+    return {
+      total,
+      avgRelevance: avgRel ? Math.round(avgRel) : null,
+      avgClarity: avgClr ? Math.round(avgClr) : null
     };
   }
 
