@@ -1,0 +1,32 @@
+# Dependencies
+node_modules/
+
+# Database files (contain user data)
+*.db
+*.db-journal
+*.db-wal
+
+# State files
+*-import-state.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+npm-debug.log*
+
+# Test artifacts
+/tmp/
+coverage/
+
+# Build (if we add one later)
+dist/
+build/

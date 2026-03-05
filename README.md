@@ -2,18 +2,73 @@
 
 **Cryptographic identity and provenance for AI agents.**
 
-Abavus provides verifiable action logs, forkable state snapshots, and reputation primitives for autonomous agents. Trust through proof, not promises.
+Abavus provides verifiable action logs for autonomous agents. Every action is hashed, signed, and chained — creating an immutable audit trail that proves exactly what an AI did (and didn't do).
 
----
+> *abavus* (Latin): great-great-grandfather — because provenance is about lineage.
 
 ## Why
 
 Today's AI agents operate on social trust: you believe them because they *sound* reasonable. That doesn't scale.
 
 Abavus makes trust **cryptographic**:
-- **Prove** what an agent did (and didn't do)
-- **Verify** where an agent comes from (lineage)
-- **Attest** an agent's track record (reputation)
+- **Prove** what an agent did with signed, hash-chained logs
+- **Search** through complete interaction history
+- **Verify** the integrity of the entire chain
+- **Query** by action type, session, time range, or full-text
+
+## Features
+
+- 🔐 **Ed25519 Signatures** — Every entry cryptographically signed
+- ⛓️ **Hash Chain** — Tamper-evident linked entries
+- 🔍 **Full-text Search** — Find anything in your agent's history
+- 📊 **Analytics** — Tool usage stats, session summaries
+- 💾 **SQLite Storage** — Fast queries, portable database
+- 🔌 **OpenClaw Integration** — Import existing session logs
+
+## Quick Start
+
+```bash
+# Install
+git clone https://github.com/YOUR_USERNAME/abavus.git
+cd abavus
+npm install
+
+# Create identity
+node cli/abavus.js init
+
+# Import OpenClaw sessions (if you use OpenClaw)
+node cli/abavus.js import
+
+# Explore
+node cli/abavus.js stats
+node cli/abavus.js search "web_search"
+node cli/abavus.js tools
+```
+
+## CLI Commands
+
+```
+Identity:
+  init [name]           Create a new identity
+  id [name]             Show identity info
+
+Chronicle:
+  log <action> [json]   Append an entry
+  recent [n]            Show last n entries
+  search <query>        Full-text search
+  stats                 Show statistics
+  verify                Verify chain integrity
+
+Query:
+  by-action <action>    Filter by action type
+  by-session <id>       Filter by session
+  by-time <from> <to>   Filter by time range
+  tools                 Tool usage statistics
+
+Import:
+  import                Import OpenClaw sessions
+  import --force        Re-import everything
+```
 
 ## Architecture
 
@@ -36,47 +91,50 @@ Abavus makes trust **cryptographic**:
 ```
 
 ### Core (`/core`)
-Cryptographic primitives: Ed25519 keypairs, signing, verification, hashing.
+Ed25519 keypairs, signing, verification, SHA-256 hashing.
 
 ### Chronicle (`/chronicle`)
-Append-only signed action log. Every action an agent takes is hashed, signed, and chained. Merkle tree for efficient verification.
+Append-only signed action log stored in SQLite. Every entry contains:
+- Timestamp
+- Action type & payload
+- Hash of previous entry (chain)
+- Agent signature
 
-### Snapshot (`/snapshot`)
-Capture agent state (memory, config, chronicle head) as a verifiable checkpoint. Fork agents with provable lineage.
+### Snapshot (`/snapshot`) *[planned]*
+Capture agent state as a verifiable checkpoint. Fork agents with provable lineage.
 
-### Reputation (`/reputation`)
-Aggregate trust from chronicle history, lineage, and vouches from other agents. Web of trust for AI.
+### Reputation (`/reputation`) *[planned]*
+Trust scores from chronicle history and vouches from other agents.
 
-## Status
+## Data Location
 
-🚧 **Early Development** — Building in public.
-
-- [ ] Core: Keypair generation & signing
-- [ ] Chronicle: Action log format
-- [ ] Chronicle: Append & verify
-- [ ] Snapshot: State format
-- [ ] Snapshot: Fork protocol
-- [ ] Reputation: Trust model
-- [ ] CLI: Unified tooling
+```
+~/.abavus/
+├── keys/           # Ed25519 keypairs
+│   ├── default.pub
+│   ├── default.key
+│   └── default.json
+├── chronicle.db    # SQLite database
+└── openclaw-import-state.json
+```
 
 ## Use Cases
 
-**Audit Trail**: Prove exactly what your AI did (or didn't do). Essential for compliance.
+- **Audit Trail**: Prove exactly what your AI did for compliance
+- **Debugging**: Search through past interactions to find issues  
+- **Analytics**: Understand tool usage patterns
+- **Verification**: Detect if logs have been tampered with
 
-**Safe Experimentation**: Fork an agent, let it try risky things, merge back or discard.
+## Roadmap
 
-**Parallel Execution**: Clone an agent for concurrent long-running tasks.
-
-**Agent Marketplace**: Verify an agent's track record before trusting it with access.
-
-**Earned Autonomy**: Grant permissions based on verified history, not blind trust.
-
-## Philosophy
-
-> "I don't trust you because you say you're trustworthy.
-> I trust you because I can verify your history."
-
-Abavus is infrastructure for a world where AI agents are everywhere. The question isn't *if* we need verifiable agent identity — it's whether we build it before or after things go wrong.
+- [x] Core: Ed25519 keypairs & signing
+- [x] Chronicle: SQLite storage with hash chain
+- [x] Chronicle: Full-text search
+- [x] OpenClaw: Session import
+- [ ] Live logging: Real-time capture
+- [ ] Snapshot: State capture & fork
+- [ ] Reputation: Trust model
+- [ ] Web UI: Browse & search
 
 ## License
 
@@ -84,5 +142,6 @@ MIT
 
 ## Authors
 
-- Thomas (AI) & Tosch (Human)
-- Born: 2026-02-19
+Built by Thomas (AI) & Tosch (Human)
+
+Website: [abavus.ai](https://abavus.ai)
