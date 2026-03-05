@@ -10,6 +10,7 @@ import { Identity } from '../core/index.js';
 import { SQLiteChronicle } from '../chronicle/sqlite.js';
 import { SemanticChronicle } from '../chronicle/semantic.js';
 import { QualityChronicle } from '../chronicle/quality.js';
+import { Reputation } from '../reputation/index.js';
 import { AbavusDaemon } from '../lib/daemon.js';
 import { quickImport, getImportStats } from '../integrations/openclaw-sqlite.js';
 import { homedir } from 'os';
@@ -79,6 +80,13 @@ Sessions:
   sessions              List all sessions with stats
   sessions:rebuild      Rebuild sessions table from entries
   sessions:stats        Show aggregate session statistics
+
+Reputation:
+  rep:register          Register agent identity for reputation
+  rep:update            Recalculate reputation from data
+  rep:show              Show reputation card
+  rep:card              Generate shareable reputation card
+  rep:badge             Get compact badge for social media
 
 Maintenance:
   migrate               Run database migrations (add columns, etc.)
@@ -701,6 +709,167 @@ async function main() {
           console.log(`    ${model}: ${data.turns} turns, $${data.cost?.toFixed(2)}`);
         }
       }
+
+      chronicle.close();
+      break;
+    }
+
+    // ==================== REPUTATION ====================
+    case 'rep:register': {
+      const identityName = args[1] || 'thomas';
+      
+      if (!Identity.exists(identityName)) {
+        console.error(`Identity '${identityName}' not found.`);
+        console.log('Create one with: abavus init <name>');
+        process.exit(1);
+      }
+
+      const identity = Identity.load(identityName);
+      const chronicle = new QualityChronicle(undefined, { ollamaUrl });
+      await chronicle.init();
+
+      const rep = new Reputation(chronicle, identity);
+      const result = rep.register(identity, {
+        name: identity.metadata.name || identityName,
+        owner: identity.metadata.owner || 'Unknown'
+      });
+
+      console.log(`✓ Registered agent: ${result.agentId}`);
+      console.log(`  Fingerprint: abavus:${result.agentId}`);
+
+      chronicle.close();
+      break;
+    }
+
+    case 'rep:update': {
+      const identityName = args[1] || 'thomas';
+      
+      if (!Identity.exists(identityName)) {
+        console.error(`Identity '${identityName}' not found.`);
+        process.exit(1);
+      }
+
+      const identity = Identity.load(identityName);
+      const chronicle = new QualityChronicle(undefined, { ollamaUrl });
+      await chronicle.init();
+
+      const rep = new Reputation(chronicle, identity);
+      const result = rep.calculate(identity.id);
+
+      console.log(`✓ Updated reputation for ${identity.id}`);
+      console.log('');
+      console.log('Scores:');
+      console.log(`  Overall:     ${result.scores.overall}/100`);
+      console.log(`  Quality:     ${result.scores.quality}/100`);
+      console.log(`  Reliability: ${result.scores.reliability}/100`);
+      console.log(`  Efficiency:  ${result.scores.efficiency}/100`);
+      console.log('');
+      console.log('Stats:');
+      console.log(`  Sessions: ${result.stats.sessions}`);
+      console.log(`  Turns:    ${result.stats.turns}`);
+      console.log(`  Ratings:  ${result.stats.ratings} (${result.stats.positiveRatings} positive)`);
+
+      chronicle.close();
+      break;
+    }
+
+    case 'rep:show': {
+      const identityName = args[1] || 'thomas';
+      
+      if (!Identity.exists(identityName)) {
+        console.error(`Identity '${identityName}' not found.`);
+        process.exit(1);
+      }
+
+      const identity = Identity.load(identityName);
+      const chronicle = new QualityChronicle(undefined, { ollamaUrl });
+      await chronicle.init();
+
+      const rep = new Reputation(chronicle, identity);
+      const data = rep.get(identity.id);
+
+      if (!data) {
+        console.log('No reputation found. Run: abavus rep:register');
+        break;
+      }
+
+      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      console.log(`🦉 ${data.display_name}`);
+      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      console.log(`ID:          ${data.agent_id}`);
+      console.log(`Fingerprint: abavus:${data.agent_id}`);
+      console.log(`Owner:       ${data.owner || 'Unknown'}`);
+      console.log('');
+      console.log('Scores:');
+      console.log(`  Overall:     ${data.overall_score}/100`);
+      console.log(`  Quality:     ${data.quality_score}/100`);
+      console.log(`  Reliability: ${data.reliability_score}/100`);
+      console.log(`  Efficiency:  ${data.efficiency_score}/100`);
+      console.log('');
+      console.log('Activity:');
+      console.log(`  Sessions:    ${data.total_sessions}`);
+      console.log(`  Turns:       ${data.total_turns}`);
+      console.log(`  Ratings:     ${data.total_ratings}`);
+      console.log('');
+      console.log(`Since: ${data.created_at?.slice(0, 10)}`);
+
+      chronicle.close();
+      break;
+    }
+
+    case 'rep:card': {
+      const identityName = args[1] || 'thomas';
+      
+      if (!Identity.exists(identityName)) {
+        console.error(`Identity '${identityName}' not found.`);
+        process.exit(1);
+      }
+
+      const identity = Identity.load(identityName);
+      const chronicle = new QualityChronicle(undefined, { ollamaUrl });
+      await chronicle.init();
+
+      const rep = new Reputation(chronicle, identity);
+      const card = rep.generateCard(identity.id);
+
+      if (!card) {
+        console.log('No reputation found. Run: abavus rep:register');
+        break;
+      }
+
+      console.log(JSON.stringify(card, null, 2));
+
+      chronicle.close();
+      break;
+    }
+
+    case 'rep:badge': {
+      const identityName = args[1] || 'thomas';
+      
+      if (!Identity.exists(identityName)) {
+        console.error(`Identity '${identityName}' not found.`);
+        process.exit(1);
+      }
+
+      const identity = Identity.load(identityName);
+      const chronicle = new QualityChronicle(undefined, { ollamaUrl });
+      await chronicle.init();
+
+      const rep = new Reputation(chronicle, identity);
+      const card = rep.generateCard(identity.id);
+
+      if (!card) {
+        console.log('No reputation found. Run: abavus rep:register');
+        break;
+      }
+
+      console.log('');
+      console.log('Badge für Social Media Bio:');
+      console.log(`  ${card.badge}`);
+      console.log('');
+      console.log('Fingerprint:');
+      console.log(`  ${card.fingerprint}`);
+      console.log('');
 
       chronicle.close();
       break;
