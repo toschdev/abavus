@@ -9,6 +9,7 @@
 import { Identity } from '../core/index.js';
 import { SQLiteChronicle } from '../chronicle/sqlite.js';
 import { SemanticChronicle } from '../chronicle/semantic.js';
+import { QualityChronicle } from '../chronicle/quality.js';
 import { AbavusDaemon } from '../lib/daemon.js';
 import { quickImport, getImportStats } from '../integrations/openclaw-sqlite.js';
 import { homedir } from 'os';
@@ -62,6 +63,12 @@ Semantic Search:
 Live:
   watch                 Watch & import in real-time (Ctrl+C to stop)
   watch --embed         Also generate embeddings for new entries
+
+Quality:
+  rate                  Evaluate Q&A quality (uses llama3.2:3b)
+  rate:stats            Show quality statistics
+  rate:low              Show low-quality interactions
+  rate:high             Show high-quality examples
 
 Query:
   by-action <action>    Filter by action type
@@ -443,6 +450,127 @@ async function main() {
       console.log(`  Sessions: ${stats.sessionsTracked}`);
       console.log(`  Total imported: ${stats.totalImported}`);
       console.log(`  Last run: ${stats.lastRun || 'never'}`);
+      break;
+    }
+
+    // ==================== QUALITY ====================
+    case 'rate': {
+      const limit = parseInt(args[1]) || 50;
+      
+      console.log('Evaluating Q&A quality...');
+      console.log(`Using: ${ollamaUrl} (llama3.2:3b)\n`);
+
+      const chronicle = new QualityChronicle(undefined, { ollamaUrl });
+      await chronicle.init();
+
+      try {
+        const result = await chronicle.evaluateAll({
+          limit,
+          onProgress: (done, total) => {
+            process.stdout.write(`\r  Progress: ${done}/${total}`);
+          }
+        });
+
+        console.log(`\n\n✓ Evaluated ${result.evaluated} Q&A pairs`);
+        
+        const stats = chronicle.qualityStats();
+        if (stats.avgRelevance !== null) {
+          console.log(`  Avg relevance: ${stats.avgRelevance}%`);
+          console.log(`  Avg clarity: ${stats.avgClarity}%`);
+        }
+      } catch (e) {
+        console.error(`\nError: ${e.message}`);
+        console.log('\nMake sure Ollama is running with llama3.2:3b');
+      }
+
+      chronicle.close();
+      break;
+    }
+
+    case 'rate:stats': {
+      const chronicle = new QualityChronicle(undefined, { ollamaUrl });
+      await chronicle.init();
+
+      const stats = chronicle.qualityStats();
+      
+      console.log('Quality Statistics:');
+      console.log(`  Evaluated pairs: ${stats.evaluated}`);
+      
+      if (stats.avgRelevance !== null) {
+        console.log(`\n  Answer Relevance:`);
+        console.log(`    Average: ${stats.avgRelevance}%`);
+        console.log(`    Range: ${stats.minRelevance}% - ${stats.maxRelevance}%`);
+        
+        console.log(`\n  Question Clarity:`);
+        console.log(`    Average: ${stats.avgClarity}%`);
+        console.log(`    Range: ${stats.minClarity}% - ${stats.maxClarity}%`);
+
+        if (Object.keys(stats.distribution).length > 0) {
+          console.log(`\n  Distribution:`);
+          const grades = ['excellent', 'good', 'fair', 'poor'];
+          for (const grade of grades) {
+            const count = stats.distribution[grade] || 0;
+            const bar = '█'.repeat(Math.min(count, 30));
+            console.log(`    ${grade.padEnd(10)} ${count.toString().padStart(4)} ${bar}`);
+          }
+        }
+      }
+
+      chronicle.close();
+      break;
+    }
+
+    case 'rate:low': {
+      const threshold = parseInt(args[1]) || 50;
+      
+      const chronicle = new QualityChronicle(undefined, { ollamaUrl });
+      await chronicle.init();
+
+      const results = chronicle.getLowQuality({ threshold, limit: 15 });
+      
+      if (results.length === 0) {
+        console.log('No low-quality interactions found (or none evaluated yet).');
+        console.log('Run "abavus rate" first to evaluate Q&A pairs.');
+        break;
+      }
+
+      console.log(`Low-quality interactions (relevance or clarity < ${threshold}%):\n`);
+      
+      for (const r of results) {
+        console.log(`[${r.questionId.slice(0, 8)}] Relevance: ${r.relevance}% | Clarity: ${r.clarity}%`);
+        console.log(`  Q: ${r.question}`);
+        console.log(`  A: ${r.answer}`);
+        if (r.feedback) console.log(`  💡 ${r.feedback}`);
+        console.log();
+      }
+
+      chronicle.close();
+      break;
+    }
+
+    case 'rate:high': {
+      const threshold = parseInt(args[1]) || 80;
+      
+      const chronicle = new QualityChronicle(undefined, { ollamaUrl });
+      await chronicle.init();
+
+      const results = chronicle.getHighQuality({ threshold, limit: 10 });
+      
+      if (results.length === 0) {
+        console.log('No high-quality interactions found (or none evaluated yet).');
+        break;
+      }
+
+      console.log(`High-quality interactions (relevance & clarity >= ${threshold}%):\n`);
+      
+      for (const r of results) {
+        console.log(`[${r.questionId.slice(0, 8)}] Relevance: ${r.relevance}% | Clarity: ${r.clarity}%`);
+        console.log(`  Q: ${r.question}`);
+        console.log(`  A: ${r.answer}`);
+        console.log();
+      }
+
+      chronicle.close();
       break;
     }
 
