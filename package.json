@@ -1,6 +1,6 @@
 {
   "name": "siegel",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Cryptographic identity and provenance for AI agents",
   "type": "module",
   "main": "core/index.js",
@@ -9,7 +9,7 @@
   },
   "scripts": {
     "test": "node --test",
-    "cli": "node cli/sigil.js"
+    "cli": "node cli/siegel.js"
   },
   "keywords": [
     "ai",
@@ -20,5 +20,8 @@
     "audit"
   ],
   "author": "Thomas & Tosch",
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "sql.js": "^1.11.0"
+  }
 }
