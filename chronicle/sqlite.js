@@ -515,6 +515,188 @@ export class SQLiteChronicle {
       this.save();
     }
   }
+
+  /**
+   * Add model column to entries (migration)
+   */
+  addModelColumn() {
+    // Check if column exists
+    const info = this.db.exec("PRAGMA table_info(entries)");
+    const columns = info[0]?.values.map(r => r[1]) || [];
+    
+    if (!columns.includes('model')) {
+      this.db.run('ALTER TABLE entries ADD COLUMN model TEXT');
+      this.db.run('CREATE INDEX IF NOT EXISTS idx_entries_model ON entries(model)');
+      
+      // Backfill from payload
+      this.db.run(`
+        UPDATE entries 
+        SET model = json_extract(payload, '$.model')
+        WHERE action = 'llm.turn' AND model IS NULL
+      `);
+      
+      this.save();
+      return { added: true, backfilled: true };
+    }
+    return { added: false, exists: true };
+  }
+
+  /**
+   * Rebuild sessions table from entries
+   */
+  rebuildSessions() {
+    // Clear existing
+    this.db.run('DELETE FROM sessions');
+    
+    // Aggregate from entries
+    this.db.run(`
+      INSERT INTO sessions (session_id, agent_id, started_at, ended_at, turn_count, total_tokens, total_cost)
+      SELECT 
+        session_id,
+        agent_id,
+        MIN(timestamp) as started_at,
+        MAX(timestamp) as ended_at,
+        SUM(CASE WHEN action = 'llm.turn' THEN 1 ELSE 0 END) as turn_count,
+        SUM(COALESCE(json_extract(payload, '$.usage.totalTokens'), 0)) as total_tokens,
+        SUM(COALESCE(json_extract(payload, '$.cost.totalCost'), 0)) as total_cost
+      FROM entries
+      WHERE session_id IS NOT NULL
+      GROUP BY session_id
+    `);
+
+    // Get distinct models per session and store as JSON
+    const sessions = this.db.exec('SELECT session_id FROM sessions');
+    if (sessions.length > 0) {
+      for (const row of sessions[0].values) {
+        const sessionId = row[0];
+        const models = this.db.exec(`
+          SELECT DISTINCT json_extract(payload, '$.model') as model
+          FROM entries 
+          WHERE session_id = ? AND action = 'llm.turn' AND json_extract(payload, '$.model') IS NOT NULL
+        `, [sessionId]);
+        
+        if (models.length > 0 && models[0].values.length > 0) {
+          const modelList = models[0].values.map(r => r[0]).filter(Boolean);
+          this.db.run(
+            'UPDATE sessions SET config = ? WHERE session_id = ?',
+            [JSON.stringify({ models: modelList }), sessionId]
+          );
+        }
+      }
+    }
+
+    this.save();
+    
+    const count = this.db.exec('SELECT COUNT(*) FROM sessions')[0]?.values[0]?.[0] || 0;
+    return { sessions: count };
+  }
+
+  /**
+   * Get session statistics
+   */
+  getSessionStats() {
+    const result = this.db.exec(`
+      SELECT 
+        COUNT(*) as total_sessions,
+        SUM(turn_count) as total_turns,
+        SUM(total_tokens) as total_tokens,
+        SUM(total_cost) as total_cost,
+        MIN(started_at) as first_session,
+        MAX(ended_at) as last_session
+      FROM sessions
+    `);
+    
+    if (result.length === 0) return null;
+    
+    const cols = result[0].columns;
+    const vals = result[0].values[0];
+    const stats = {};
+    cols.forEach((c, i) => stats[c] = vals[i]);
+    
+    // Models breakdown
+    const models = this.db.exec(`
+      SELECT 
+        json_extract(payload, '$.model') as model,
+        COUNT(*) as turns,
+        SUM(COALESCE(json_extract(payload, '$.cost.totalCost'), 0)) as cost
+      FROM entries
+      WHERE action = 'llm.turn'
+      GROUP BY model
+      ORDER BY turns DESC
+    `);
+    
+    stats.models = {};
+    if (models.length > 0) {
+      for (const row of models[0].values) {
+        if (row[0]) {
+          stats.models[row[0]] = { turns: row[1], cost: row[2] };
+        }
+      }
+    }
+    
+    return stats;
+  }
+
+  /**
+   * Move large content to blobs (deduplication)
+   */
+  deduplicateContent(options = {}) {
+    const { minSize = 1000 } = options;
+    let moved = 0;
+    let saved = 0;
+
+    // Find large content_text entries
+    const largeEntries = this.db.exec(`
+      SELECT id, content_text 
+      FROM entries 
+      WHERE LENGTH(content_text) > ?
+    `, [minSize]);
+
+    if (largeEntries.length === 0) return { moved: 0, saved: 0 };
+
+    for (const row of largeEntries[0].values) {
+      const [entryId, content] = row;
+      const contentHash = hash(content);
+      
+      // Check if blob exists
+      const existing = this.db.exec(
+        'SELECT refs FROM content_blobs WHERE hash = ?',
+        [contentHash]
+      );
+
+      if (existing.length > 0 && existing[0].values.length > 0) {
+        // Increment refs
+        this.db.run('UPDATE content_blobs SET refs = refs + 1 WHERE hash = ?', [contentHash]);
+        saved += content.length;
+      } else {
+        // Insert new blob
+        this.db.run(`
+          INSERT INTO content_blobs (hash, content, original_size, first_entry_id)
+          VALUES (?, ?, ?, ?)
+        `, [contentHash, content, content.length, entryId]);
+      }
+      
+      // Update entry to reference blob
+      this.db.run(
+        'UPDATE entries SET content_text = ? WHERE id = ?',
+        [`blob:${contentHash}`, entryId]
+      );
+      moved++;
+    }
+
+    this.save();
+    return { moved, savedBytes: saved };
+  }
+
+  /**
+   * Resolve blob reference
+   */
+  resolveBlob(blobRef) {
+    if (!blobRef?.startsWith('blob:')) return blobRef;
+    const hash = blobRef.slice(5);
+    const result = this.db.exec('SELECT content FROM content_blobs WHERE hash = ?', [hash]);
+    return result[0]?.values[0]?.[0] || blobRef;
+  }
 }
 
 export default { SQLiteChronicle, initSQL };

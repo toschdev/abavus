@@ -75,6 +75,15 @@ Query:
   by-session <id>       Filter by session
   tools                 Tool usage statistics
 
+Sessions:
+  sessions              List all sessions with stats
+  sessions:rebuild      Rebuild sessions table from entries
+  sessions:stats        Show aggregate session statistics
+
+Maintenance:
+  migrate               Run database migrations (add columns, etc.)
+  dedupe                Deduplicate large content to blobs
+
 Import:
   import                Import OpenClaw sessions (incremental)
   import --force        Re-import everything
@@ -614,6 +623,122 @@ async function main() {
         console.log(`  Avg relevance: ${stats.avgRelevance}%`);
         console.log(`  Avg clarity: ${stats.avgClarity}%`);
       }
+
+      chronicle.close();
+      break;
+    }
+
+    // ==================== SESSIONS ====================
+    case 'sessions': {
+      const chronicle = new SQLiteChronicle();
+      await chronicle.init();
+
+      const result = chronicle.db.exec(`
+        SELECT 
+          session_id,
+          started_at,
+          ended_at,
+          turn_count,
+          total_tokens,
+          ROUND(total_cost, 4) as cost,
+          config
+        FROM sessions
+        ORDER BY started_at DESC
+        LIMIT 20
+      `);
+
+      if (result.length === 0 || result[0].values.length === 0) {
+        console.log('No sessions found. Run: abavus sessions:rebuild');
+        break;
+      }
+
+      console.log('Recent Sessions:\n');
+      for (const row of result[0].values) {
+        const [id, start, end, turns, tokens, cost, config] = row;
+        const models = config ? JSON.parse(config).models?.join(', ') || '?' : '?';
+        const startDate = new Date(start).toLocaleDateString('de-DE');
+        console.log(`${id.slice(0, 12)}  ${startDate}  ${turns} turns  ${tokens} tok  $${cost || 0}`);
+        console.log(`  Models: ${models}\n`);
+      }
+
+      chronicle.close();
+      break;
+    }
+
+    case 'sessions:rebuild': {
+      const chronicle = new SQLiteChronicle();
+      await chronicle.init();
+
+      console.log('Rebuilding sessions table...');
+      const result = chronicle.rebuildSessions();
+      console.log(`✓ Created ${result.sessions} session records`);
+
+      chronicle.close();
+      break;
+    }
+
+    case 'sessions:stats': {
+      const chronicle = new SQLiteChronicle();
+      await chronicle.init();
+
+      const stats = chronicle.getSessionStats();
+      
+      if (!stats || stats.total_sessions === 0) {
+        console.log('No sessions found. Run: abavus sessions:rebuild');
+        break;
+      }
+
+      console.log('Session Statistics:\n');
+      console.log(`  Total sessions: ${stats.total_sessions}`);
+      console.log(`  Total turns: ${stats.total_turns}`);
+      console.log(`  Total tokens: ${stats.total_tokens?.toLocaleString()}`);
+      console.log(`  Total cost: $${stats.total_cost?.toFixed(2)}`);
+      console.log(`  Period: ${stats.first_session?.slice(0, 10)} → ${stats.last_session?.slice(0, 10)}`);
+      
+      if (Object.keys(stats.models).length > 0) {
+        console.log('\n  Models:');
+        for (const [model, data] of Object.entries(stats.models)) {
+          console.log(`    ${model}: ${data.turns} turns, $${data.cost?.toFixed(2)}`);
+        }
+      }
+
+      chronicle.close();
+      break;
+    }
+
+    // ==================== MAINTENANCE ====================
+    case 'migrate': {
+      const chronicle = new SQLiteChronicle();
+      await chronicle.init();
+
+      console.log('Running migrations...');
+      
+      // Add model column
+      const modelResult = chronicle.addModelColumn();
+      if (modelResult.added) {
+        console.log('  ✓ Added model column to entries');
+      } else {
+        console.log('  · model column already exists');
+      }
+
+      // Rebuild sessions
+      const sessionsResult = chronicle.rebuildSessions();
+      console.log(`  ✓ Rebuilt ${sessionsResult.sessions} sessions`);
+
+      console.log('\n✓ Migrations complete');
+      chronicle.close();
+      break;
+    }
+
+    case 'dedupe': {
+      const chronicle = new SQLiteChronicle();
+      await chronicle.init();
+
+      console.log('Deduplicating large content...');
+      const result = chronicle.deduplicateContent({ minSize: 1000 });
+      
+      console.log(`  Entries processed: ${result.moved}`);
+      console.log(`  Bytes saved: ${result.savedBytes.toLocaleString()}`);
 
       chronicle.close();
       break;
