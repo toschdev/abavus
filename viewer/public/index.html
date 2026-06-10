@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Abavus Chronicle</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <header class="header">
+    <div>
+      <p class="eyebrow">Abavus</p>
+      <h1>Agent Chronicle</h1>
+      <p class="subtitle">Cryptographic audit trail for AI sessions</p>
+    </div>
+    <div class="badge" id="chain-badge">Checking chain…</div>
+  </header>
+
+  <main class="layout">
+    <section class="panel stats-panel">
+      <h2>Overview</h2>
+      <div class="stats-grid" id="stats-grid"></div>
+      <h3>Recent sessions</h3>
+      <div class="session-list" id="session-list"></div>
+    </section>
+
+    <section class="panel timeline-panel">
+      <div class="timeline-header">
+        <h2>Session timeline</h2>
+        <form id="lookup-form" class="lookup-form">
+          <input id="session-input" type="text" placeholder="Session ID or prefix" />
+          <button type="submit">Load</button>
+        </form>
+      </div>
+      <div id="timeline-meta" class="timeline-meta"></div>
+      <div id="timeline" class="timeline"></div>
+    </section>
+  </main>
+
+  <script>
+    const statsGrid = document.getElementById('stats-grid');
+    const sessionList = document.getElementById('session-list');
+    const chainBadge = document.getElementById('chain-badge');
+    const timeline = document.getElementById('timeline');
+    const timelineMeta = document.getElementById('timeline-meta');
+    const lookupForm = document.getElementById('lookup-form');
+    const sessionInput = document.getElementById('session-input');
+
+    function fmtDate(value) {
+      if (!value) return '—';
+      return new Date(value).toLocaleString();
+    }
+
+    function renderStats(data) {
+      const { stats, spool } = data;
+      const cards = [
+        ['Entries', stats.entries?.toLocaleString() || '0'],
+        ['DB size', `${((stats.dbSize || 0) / (1024 * 1024)).toFixed(1)} MB`],
+        ['Tool calls', stats.actions?.['tool.call'] || 0],
+        ['LLM turns', stats.actions?.['llm.turn'] || 0],
+        ['Spool pending', spool.pending || 0],
+      ];
+
+      statsGrid.innerHTML = cards.map(([label, value]) => `
+        <div class="stat-card">
+          <span class="stat-label">${label}</span>
+          <span class="stat-value">${value}</span>
+        </div>
+      `).join('');
+
+      sessionList.innerHTML = (data.sessions || []).map((s) => `
+        <button class="session-item" data-session="${s.session_id}">
+          <span class="session-id">${s.session_id.slice(0, 18)}…</span>
+          <span class="session-meta">${s.entries} entries · ${fmtDate(s.started)}</span>
+        </button>
+      `).join('') || '<p class="empty">No sessions yet.</p>';
+
+      document.querySelectorAll('.session-item').forEach((btn) => {
+        btn.addEventListener('click', () => loadSession(btn.dataset.session));
+      });
+    }
+
+    function renderTimeline(data) {
+      const report = data.report;
+      timelineMeta.innerHTML = `
+        <div class="meta-row"><strong>${report.sessionId}</strong></div>
+        <div class="meta-row">${fmtDate(report.started)} → ${fmtDate(report.ended)}</div>
+        <div class="meta-row">Tools ${report.counts.tools} · Reads ${report.counts.reads} · Writes ${report.counts.writes} · Turns ${report.counts.turns}</div>
+      `;
+
+      timeline.innerHTML = report.timeline.map((item) => `
+        <article class="timeline-item">
+          <time>${new Date(item.timestamp).toLocaleTimeString()}</time>
+          <div>
+            <span class="timeline-icon">${item.icon}</span>
+            <span class="timeline-summary">${item.summary}</span>
+          </div>
+        </article>
+      `).join('');
+    }
+
+    async function loadSession(id) {
+      sessionInput.value = id;
+      const res = await fetch(`/api/sessions/${encodeURIComponent(id)}`);
+      const data = await res.json();
+      if (!res.ok) {
+        timelineMeta.innerHTML = `<p class="error">${data.error || 'Could not load session'}</p>`;
+        timeline.innerHTML = '';
+        return;
+      }
+      renderTimeline(data);
+    }
+
+    async function init() {
+      const [statsRes, verifyRes] = await Promise.all([
+        fetch('/api/stats'),
+        fetch('/api/verify'),
+      ]);
+
+      const stats = await statsRes.json();
+      const verify = await verifyRes.json();
+
+      renderStats(stats);
+
+      if (verify.valid === true) {
+        chainBadge.textContent = `✓ Chain valid (${verify.entries} entries)`;
+        chainBadge.classList.add('ok');
+      } else if (verify.valid === false) {
+        chainBadge.textContent = `✗ Chain invalid`;
+        chainBadge.classList.add('bad');
+      } else {
+        chainBadge.textContent = 'Chain not verified';
+      }
+
+      if (stats.sessions?.[0]) {
+        loadSession(stats.sessions[0].session_id);
+      }
+    }
+
+    lookupForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      loadSession(sessionInput.value.trim());
+    });
+
+    init();
+  </script>
+</body>
+</html>

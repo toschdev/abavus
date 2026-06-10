@@ -1,6 +1,6 @@
 {
   "name": "abavus",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Cryptographic identity and provenance for AI agents",
   "type": "module",
   "main": "core/index.js",
@@ -9,7 +9,9 @@
   },
   "scripts": {
     "test": "node --test",
-    "cli": "node cli/abavus.js"
+    "cli": "node cli/abavus.js",
+    "viewer": "node viewer/server.mjs",
+    "hook:install-grok": "node cli/abavus.js hook:install-grok"
   },
   "keywords": [
     "ai",

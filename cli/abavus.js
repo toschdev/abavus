@@ -14,6 +14,9 @@ import { Reputation } from '../reputation/index.js';
 import { Snapshot, Fork, diffSnapshots } from '../snapshot/index.js';
 import { AbavusDaemon } from '../lib/daemon.js';
 import { quickImport, getImportStats } from '../integrations/openclaw-sqlite.js';
+import { buildSessionReport, resolveSessionQuery } from '../lib/session-report.js';
+import { spoolFlush, spoolStats } from '../lib/spool.js';
+import { installGrokHooks, grokHooksStatus } from '../lib/install-grok.js';
 import { homedir } from 'os';
 import { join } from 'path';
 
@@ -78,9 +81,17 @@ Query:
   tools                 Tool usage statistics
 
 Sessions:
+  session <id>          Session timeline report (supports ID prefix)
+  session <id> --json   Machine-readable session report
   sessions              List all sessions with stats
   sessions:rebuild      Rebuild sessions table from entries
   sessions:stats        Show aggregate session statistics
+
+Grok Integration:
+  hook:install-grok     Install lifecycle hooks into ~/.grok/hooks/
+  hook:status           Show Grok hook installation status
+  spool:stats           Pending Grok events not yet flushed
+  spool:flush           Flush spool into signed chronicle
 
 Snapshots:
   snap:create           Create a snapshot of current state
@@ -645,6 +656,85 @@ async function main() {
     }
 
     // ==================== SESSIONS ====================
+    case 'session': {
+      const query = args[1];
+      const asJson = args.includes('--json');
+
+      if (!query) {
+        console.error('Usage: abavus session <session-id> [--json]');
+        process.exit(1);
+      }
+
+      const chronicle = new SQLiteChronicle();
+      await chronicle.init();
+
+      const resolved = resolveSessionQuery(chronicle, query);
+      if (resolved.ambiguous) {
+        console.log('Multiple sessions match. Be more specific:\n');
+        for (const match of resolved.ambiguous) {
+          console.log(`  ${match.session_id}  (${match.entries} entries, ${match.started?.slice(0, 10)})`);
+        }
+        chronicle.close();
+        process.exit(1);
+      }
+      if (resolved.error) {
+        console.error(`No session found for '${query}'.`);
+        chronicle.close();
+        process.exit(1);
+      }
+
+      const report = buildSessionReport(chronicle, resolved.sessionId, { identityName });
+      chronicle.close();
+
+      if (!report) {
+        console.error(`No entries for session '${resolved.sessionId}'.`);
+        process.exit(1);
+      }
+
+      if (asJson) {
+        console.log(JSON.stringify(report, null, 2));
+        break;
+      }
+
+      const chain = report.verification.valid ? '✓ valid' : '✗ invalid';
+      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      console.log(`Session ${report.sessionId}`);
+      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      console.log(`  Period:    ${report.started} → ${report.ended}`);
+      if (report.durationHuman) console.log(`  Duration:  ${report.durationHuman}`);
+      console.log(`  Entries:   ${report.entryCount}`);
+      console.log(`  Source:    ${report.source}`);
+      console.log(`  Chain:     ${chain}`);
+      console.log('');
+      console.log('Activity:');
+      console.log(`  Tools: ${report.counts.tools}  Reads: ${report.counts.reads}  Writes: ${report.counts.writes}  Turns: ${report.counts.turns}  Messages: ${report.counts.messages}`);
+
+      if (report.tools.length > 0) {
+        console.log('\nTop tools:');
+        for (const [tool, count] of report.tools.slice(0, 8)) {
+          console.log(`  ${tool.padEnd(18)} ${count}`);
+        }
+      }
+
+      if (report.filesTouched.length > 0) {
+        console.log('\nFiles touched:');
+        for (const file of report.filesTouched.slice(0, 12)) {
+          console.log(`  ${file}`);
+        }
+        if (report.filesTouched.length > 12) {
+          console.log(`  … +${report.filesTouched.length - 12} more`);
+        }
+      }
+
+      console.log('\nTimeline:\n');
+      for (const item of report.timeline) {
+        const time = new Date(item.timestamp).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        const sig = item.signed ? '✓' : ' ';
+        console.log(`${time} ${sig} ${item.icon} ${item.summary}`);
+      }
+      break;
+    }
+
     case 'sessions': {
       const chronicle = new SQLiteChronicle();
       await chronicle.init();
@@ -1071,6 +1161,44 @@ async function main() {
       console.log('');
 
       chronicle.close();
+      break;
+    }
+
+    // ==================== GROK INTEGRATION ====================
+    case 'hook:install-grok': {
+      const result = installGrokHooks();
+      console.log('✓ Installed Grok hooks');
+      console.log(`  Config: ${result.path}`);
+      console.log(`  Script: ${result.command}`);
+      console.log('\nRestart Grok / Cursor agent for hooks to load.');
+      console.log('Events logged: SessionStart, PostToolUse, UserPromptSubmit, SessionEnd, Stop');
+      break;
+    }
+
+    case 'hook:status': {
+      const status = grokHooksStatus();
+      console.log('Grok Hook Status:');
+      console.log(`  Installed: ${status.installed ? 'yes' : 'no'}`);
+      console.log(`  Path:      ${status.path}`);
+      console.log(`  Script OK: ${status.scriptExists ? 'yes' : 'no'}`);
+      if (status.command) console.log(`  Command:   ${status.command}`);
+      break;
+    }
+
+    case 'spool:stats': {
+      const stats = spoolStats();
+      console.log('Grok Spool:');
+      console.log(`  Pending:   ${stats.pending}`);
+      console.log(`  Sessions:  ${stats.sessions}`);
+      console.log(`  Path:      ${stats.path}`);
+      if (stats.oldest) console.log(`  Oldest:    ${stats.oldest}`);
+      if (stats.newest) console.log(`  Newest:    ${stats.newest}`);
+      break;
+    }
+
+    case 'spool:flush': {
+      const result = await spoolFlush({ identityName });
+      console.log(`✓ Flushed ${result.flushed} spooled events into chronicle`);
       break;
     }
 
