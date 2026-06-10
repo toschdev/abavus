@@ -29,20 +29,28 @@ Abavus makes trust **cryptographic**:
 
 ```bash
 # Install
-git clone https://github.com/YOUR_USERNAME/abavus.git
+git clone https://github.com/toschdev/abavus.git
 cd abavus
 npm install
 
 # Create identity
 node cli/abavus.js init
 
+# Grok / Cursor: auto-log every tool call
+node cli/abavus.js hook:install-grok
+
 # Import OpenClaw sessions (if you use OpenClaw)
 node cli/abavus.js import
 
 # Explore
 node cli/abavus.js stats
-node cli/abavus.js search "web_search"
-node cli/abavus.js tools
+node cli/abavus.js sessions
+node cli/abavus.js session <session-id>
+node cli/abavus.js verify
+
+# Web viewer
+npm run viewer
+# → http://127.0.0.1:3847
 ```
 
 ## CLI Commands
@@ -134,6 +142,17 @@ Trust scores from chronicle history and vouches from other agents.
 - **Analytics**: Understand tool usage patterns
 - **Verification**: Detect if logs have been tampered with
 
+## Grok Integration
+
+Abavus can log Grok / Cursor agent activity in real time:
+
+1. `abavus hook:install-grok` writes hooks to `~/.grok/hooks/abavus-grok.json`
+2. `PostToolUse` events append to a fast local spool (`~/.abavus/spool/grok.jsonl`)
+3. `SessionEnd` / `Stop` flush the spool into the signed SQLite chronicle
+4. `abavus session <id>` or the web viewer shows the timeline
+
+Restart the agent after installing hooks.
+
 ## Roadmap
 
 - [x] Core: Ed25519 keypairs & signing
@@ -142,7 +161,8 @@ Trust scores from chronicle history and vouches from other agents.
 - [x] OpenClaw: Session import & live watching
 - [x] Snapshot: State capture & fork protocol
 - [x] Reputation: Trust scores & attestations
-- [ ] Web UI: Browse & search
+- [x] Grok: Lifecycle hooks + session timeline
+- [x] Web UI: Browse sessions & timeline
 - [ ] Blockchain: On-chain attestations
 
 ## License

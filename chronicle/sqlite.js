@@ -265,6 +265,46 @@ export class SQLiteChronicle {
   }
 
   /**
+   * Find sessions by ID prefix (for partial CLI lookups).
+   */
+  findSessions(prefix, limit = 10) {
+    const pattern = `${prefix}%`;
+    const result = this.db.exec(`
+      SELECT session_id, MIN(timestamp) as started, MAX(timestamp) as ended, COUNT(*) as entries
+      FROM entries
+      WHERE session_id LIKE ?
+      GROUP BY session_id
+      ORDER BY started DESC
+      LIMIT ?
+    `, [pattern, limit]);
+
+    if (result.length === 0) return [];
+    return result[0].values.map((row) => ({
+      session_id: row[0],
+      started: row[1],
+      ended: row[2],
+      entries: row[3],
+    }));
+  }
+
+  /**
+   * Load session metadata row when present.
+   */
+  getSessionRow(sessionId) {
+    const result = this.db.exec('SELECT * FROM sessions WHERE session_id = ?', [sessionId]);
+    if (result.length === 0 || result[0].values.length === 0) return null;
+
+    const columns = result[0].columns;
+    const values = result[0].values[0];
+    const row = {};
+    columns.forEach((col, i) => { row[col] = values[i]; });
+    if (row.config && typeof row.config === 'string') {
+      try { row.config = JSON.parse(row.config); } catch { /* keep string */ }
+    }
+    return row;
+  }
+
+  /**
    * Full-text search (uses LIKE, not FTS - sql.js doesn't support FTS5 well)
    */
   search(query, limit = 50) {
