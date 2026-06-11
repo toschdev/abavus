@@ -48,9 +48,21 @@ node cli/abavus.js sessions
 node cli/abavus.js session <session-id>
 node cli/abavus.js verify
 
+<<<<<<< HEAD
 # Web viewer
 npm run viewer
 # → http://127.0.0.1:3847
+=======
+# Web viewer (greatly improved dashboard)
+npm run viewer
+# → http://127.0.0.1:3847
+
+Rich session explorer, global search, expandable events with thinking/tool results, filters, and export.
+
+# Marketing site (static)
+npm run site
+# or open site/index.html directly
+>>>>>>> 89164dd (chore(license): switch entire repo to AGPL-3.0-only)
 ```
 
 ## CLI Commands
@@ -167,10 +179,29 @@ Restart the agent after installing hooks.
 
 ## License
 
-MIT
+GNU Affero General Public License v3.0 (AGPL-3.0)
+
+## Copyright
+
+Copyright (C) 2026 Tobias Schwarz (toschdev)
 
 ## Authors
 
-Built by Thomas (AI) & Tosch (Human)
+Tobias Schwarz (toschdev)
 
-Website: [abavus.ai](https://abavus.ai)
+## Website
+
+The official marketing website is maintained in its own repository:
+
+→ https://github.com/toschdev/abavus-website
+
+It is deployed via GitHub Pages and can be reached at:
+
+- https://toschdev.github.io/abavus-website
+- (Custom domain `abavus.ai` can be connected later)
+
+The source for the website is completely separate from the main Abavus tool so it can be versioned, themed, and deployed independently.
+
+## Copyright
+
+Copyright (C) 2026 Tobias Schwarz (toschdev)

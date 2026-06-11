@@ -21,8 +21,8 @@
     "provenance",
     "audit"
   ],
-  "author": "Thomas & Tosch",
-  "license": "MIT",
+  "author": "Tobias Schwarz (toschdev)",
+  "license": "AGPL-3.0-only",
   "dependencies": {
     "sql.js": "^1.11.0"
   }
