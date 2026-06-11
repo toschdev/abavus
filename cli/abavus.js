@@ -53,6 +53,12 @@ Identity:
   init [name]           Create a new identity (default: 'default')
   id [name]             Show identity info
 
+Personas:
+  create persona <name>   Create a persona with its own identity, strengths & knowledge
+  personas                List all personas
+  persona <name>          Show details for a persona
+  fork persona <name> as <new>   Fork a persona preserving full cryptographic history
+
 Chronicle:
   recent [n]            Show last n entries (default: 20)
   search <query>        Full-text search (LIKE)
@@ -125,6 +131,9 @@ Options:
 Examples:
   abavus import
   abavus ask "What did we discuss about embeddings?"
+  abavus create persona researcher --strengths "analysis,fact-checking" --knowledge "./research-base.md"
+  abavus personas
+  abavus persona researcher
   abavus watch --embed
   abavus tools
 `;
@@ -155,6 +164,120 @@ async function main() {
       console.log(`Identity: ${name}`);
       console.log(`  ID: ${identity.id}`);
       console.log(`  Created: ${identity.metadata.created || 'unknown'}`);
+      break;
+    }
+
+    // ==================== PERSONAS ====================
+    case 'create': {
+      if (args[1] !== 'persona') {
+        console.error('Usage: abavus create persona <name> [--identity <name>] [--description "..."] [--strengths "a,b"] [--knowledge "file1,file2"]');
+        process.exit(1);
+      }
+      const name = args[2];
+      if (!name) {
+        console.error('Usage: abavus create persona <name>');
+        process.exit(1);
+      }
+
+      const options = {};
+      for (let i = 3; i < args.length; i++) {
+        if (args[i] === '--identity' || args[i] === '-i') options.identity = args[++i];
+        else if (args[i] === '--description') options.description = args[++i];
+        else if (args[i] === '--strengths') options.strengths = args[++i];
+        else if (args[i] === '--knowledge') options.knowledge = args[++i];
+      }
+
+      try {
+        const { Persona } = await import('../lib/persona.js');
+        const persona = Persona.create(name, options);
+        console.log(`✓ Created persona '${persona.name}'`);
+        console.log(`  Identity: ${persona.identity}`);
+        if (persona.description) console.log(`  Description: ${persona.description}`);
+        if (persona.strengths.length) console.log(`  Strengths: ${persona.strengths.join(', ')}`);
+        if (persona.knowledge.length) console.log(`  Knowledge: ${persona.knowledge.join(', ')}`);
+        console.log(`  Created: ${persona.created}`);
+      } catch (e) {
+        console.error(`Error: ${e.message}`);
+        process.exit(1);
+      }
+      break;
+    }
+
+    case 'personas': {
+      try {
+        const { Persona } = await import('../lib/persona.js');
+        const list = Persona.list();
+        if (list.length === 0) {
+          console.log('No personas yet. Create one with: abavus create persona <name>');
+          break;
+        }
+        console.log('Personas:\n');
+        for (const name of list) {
+          const p = Persona.load(name);
+          console.log(`${p.name}`);
+          console.log(`  Identity: ${p.identity}`);
+          if (p.description) console.log(`  ${p.description}`);
+          if (p.strengths.length) console.log(`  Strengths: ${p.strengths.join(', ')}`);
+          console.log('');
+        }
+      } catch (e) {
+        console.error(`Error: ${e.message}`);
+      }
+      break;
+    }
+
+    case 'persona': {
+      const name = args[1];
+      if (!name) {
+        console.error('Usage: abavus persona <name> [info|fork|snapshot]');
+        process.exit(1);
+      }
+      try {
+        const { Persona } = await import('../lib/persona.js');
+        if (!Persona.exists(name)) {
+          console.error(`Persona '${name}' not found.`);
+          process.exit(1);
+        }
+        const p = Persona.load(name);
+        const info = p.info();
+        console.log(`Persona: ${p.name}`);
+        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        console.log(`Identity:   ${p.identity} (exists: ${info.hasIdentity})`);
+        if (info.identityId) console.log(`  ID: ${info.identityId}`);
+        console.log(`Description: ${p.description || '(none)'}`);
+        console.log(`Strengths:   ${p.strengths.length ? p.strengths.join(', ') : '(none)'}`);
+        console.log(`Knowledge:   ${p.knowledge.length ? p.knowledge.join(', ') : '(none)'}`);
+        console.log(`Created:     ${p.created}`);
+        if (p.lastSnapshot) console.log(`Last snapshot: ${p.lastSnapshot}`);
+      } catch (e) {
+        console.error(`Error: ${e.message}`);
+      }
+      break;
+    }
+
+    case 'fork': {
+      if (args[1] !== 'persona') {
+        console.error('Usage: abavus fork persona <name> as <newname>');
+        process.exit(1);
+      }
+      const name = args[2];
+      const asIdx = args.indexOf('as');
+      const newName = asIdx > 0 ? args[asIdx + 1] : null;
+      if (!name || !newName) {
+        console.error('Usage: abavus fork persona <name> as <newname>');
+        process.exit(1);
+      }
+      try {
+        const { Persona } = await import('../lib/persona.js');
+        const original = Persona.load(name);
+        const forked = await original.fork(newName);
+        console.log(`✓ Forked persona '${name}' → '${newName}'`);
+        console.log(`  New identity: ${forked.identity}`);
+        console.log(`  Preserved strengths and knowledge from original.`);
+      } catch (e) {
+        console.error(`Error: ${e.message}`);
+        process.exit(1);
+      }
       break;
     }
 

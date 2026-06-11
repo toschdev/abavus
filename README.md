@@ -177,6 +177,28 @@ Restart the agent after installing hooks.
 - [x] Web UI: Browse sessions & timeline
 - [ ] Blockchain: On-chain attestations
 
+## Personas (Rich Agent Personalities)
+
+Personas let you create distinct "personalities" with their own cryptographic identity, strengths, knowledge base, and verifiable history. This builds on identities, snapshots, and the chronicle for true ownable agents.
+
+```bash
+# Create with strengths and knowledge
+abavus create persona researcher \
+  --strengths "deep analysis,fact-checking" \
+  --knowledge "./research-base.md" \
+  --description "Expert in development data and transparency initiatives"
+
+abavus personas
+abavus persona researcher
+
+# Fork with cryptographic lineage
+abavus fork persona researcher as senior-researcher
+```
+
+All actions by a persona are signed with its identity and chained — giving you recall (1), integrity (2), transparency (3), and rich, forkable personalities (4).
+
+See `abavus --help` for the full persona command set.
+
 ## License
 
 GNU Affero General Public License v3.0 (AGPL-3.0)
