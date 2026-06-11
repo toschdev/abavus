@@ -199,6 +199,28 @@ All actions by a persona are signed with its identity and chained — giving you
 
 See `abavus --help` for the full persona command set.
 
+### Usage Strategies & Best Practices
+
+**Domain specialization**
+Create dedicated personas for different areas of work (researcher, coder, strategist, writer). Each accumulates its own knowledge and history. Use `fork` when you want to deeply specialize a branch of expertise while keeping the parent lineage intact.
+
+**Checkpointing with snapshots**
+After a major project or knowledge injection, run `abavus -i <persona-identity> snap:create "after project X"`. This gives you auditable, restorable states of that persona.
+
+**Provenance-first workflows**
+- Always use the persona's identity (`-i` or the persona's linked identity) when the agent is "being" that persona.
+- Review with `abavus persona X` + the viewer or `abavus -i <id> session ...` to see exactly what that personality has done.
+- Fork before risky experiments so you can always trace back to a known-good state.
+
+**Long-term memory & recall**
+Personas + semantic search (`ask`) + full session reports give you reliable "what did we discuss / decide under this persona?" Recall that is cryptographically grounded.
+
+**Transparency & auditing**
+The Grok hooks + complete logging mean you can always answer "what happened in the background?" for any persona. Combine with `verify` for integrity checks on demand.
+
+**Future evolution**
+Personas are designed to be the foundation for richer features (attested knowledge sharing between personas, reputation graphs, multi-persona collaboration). The current design keeps everything verifiable from day one.
+
 ## License
 
 GNU Affero General Public License v3.0 (AGPL-3.0)
@@ -223,7 +245,3 @@ It is deployed via GitHub Pages and can be reached at:
 - (Custom domain `abavus.ai` can be connected later)
 
 The source for the website is completely separate from the main Abavus tool so it can be versioned, themed, and deployed independently.
-
-## Copyright
-
-Copyright (C) 2026 Tobias Schwarz (toschdev)
