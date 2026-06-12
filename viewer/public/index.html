@@ -13,7 +13,11 @@
       <h1>Agent Chronicle</h1>
       <p class="subtitle">Cryptographic audit trail for AI sessions</p>
     </div>
-    <div class="badge" id="chain-badge">Checking chain…</div>
+    <div style="display:flex; align-items:center; gap:1rem;">
+      <input id="global-search" type="text" placeholder="Global search entries..." style="background:#111821; border:1px solid var(--border); color:var(--text); border-radius:8px; padding:0.4rem 0.6rem; font-size:0.9rem; min-width:220px;" />
+      <div class="badge" id="chain-badge">Checking chain…</div>
+      <span id="live-indicator" style="font-size:0.75rem; color:var(--ok); display:flex; align-items:center; gap:4px;">● Live</span>
+    </div>
   </header>
 
   <main class="layout">
@@ -21,30 +25,134 @@
       <h2>Overview</h2>
       <div class="stats-grid" id="stats-grid"></div>
       <h3>Recent sessions</h3>
+      <input id="session-filter" type="text" placeholder="Filter sessions by ID..." />
       <div class="session-list" id="session-list"></div>
     </section>
 
     <section class="panel timeline-panel">
       <div class="timeline-header">
         <h2>Session timeline</h2>
-        <form id="lookup-form" class="lookup-form">
-          <input id="session-input" type="text" placeholder="Session ID or prefix" />
-          <button type="submit">Load</button>
-        </form>
+        <div style="display:flex; gap:0.5rem; align-items:center;">
+          <form id="lookup-form" class="lookup-form">
+            <input id="session-input" type="text" placeholder="Session ID or prefix" />
+            <button type="submit">Load</button>
+          </form>
+          <button id="export-btn" type="button" style="background:#111821; border:1px solid var(--border); color:var(--text); border-radius:8px; padding:0.4rem 0.6rem; font-size:0.8rem; cursor:pointer;">Export JSON</button>
+        </div>
+      </div>
+      <div id="timeline-filters" style="display:flex; gap:0.5rem; margin-bottom:0.5rem; flex-wrap:wrap;">
+        <button class="filter-btn active" data-filter="all" style="background:#111821; border:1px solid var(--border); color:var(--text); padding:0.25rem 0.5rem; border-radius:6px; font-size:0.8rem; cursor:pointer;">All</button>
+        <button class="filter-btn" data-filter="rich" style="background:#111821; border:1px solid var(--border); color:var(--text); padding:0.25rem 0.5rem; border-radius:6px; font-size:0.8rem; cursor:pointer;">Rich info only</button>
+        <span id="timeline-count" style="font-size:0.75rem; color:var(--muted); align-self:center; margin-left:auto;"></span>
       </div>
       <div id="timeline-meta" class="timeline-meta"></div>
+      <div id="global-search-results" style="display:none; margin-bottom:0.5rem; max-height:120px; overflow:auto; border:1px solid var(--border); border-radius:8px; background:#111821; font-size:0.85rem;"></div>
       <div id="timeline" class="timeline"></div>
+      <button id="load-more-btn" style="display:none; margin:0.5rem auto; background:var(--accent); color:#041018; border:none; border-radius:8px; padding:0.4rem 1rem; font-size:0.85rem; cursor:pointer;">Load next 30 items</button>
+
+      <!-- Dedicated details pane in the middle column for clicked item (large, easy to use) -->
+      <div id="item-detail-pane" style="display: none; margin-top: 1rem; border: 1px solid var(--border); border-radius: 10px; background: #0f1419; padding: 0.75rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; border-bottom: 1px solid var(--border); padding-bottom: 0.4rem;">
+          <strong id="detail-header">Item details</strong>
+          <button id="detail-close-btn" style="background: transparent; border: 1px solid var(--border); color: var(--muted); border-radius: 4px; padding: 2px 8px; font-size: 0.75rem; cursor: pointer;">Close</button>
+        </div>
+        <div id="detail-meta" style="margin-bottom: 0.5rem; font-size: 0.85rem; line-height: 1.4;"></div>
+        <pre id="detail-json" style="font-size: 0.75rem; white-space: pre-wrap; max-height: 520px; overflow: auto; background: #111821; padding: 0.6rem; border-radius: 6px; border: 1px solid var(--border); box-shadow: inset 0 1px 3px rgba(0,0,0,0.3);"></pre>
+      </div>
     </section>
+
+    <aside class="help-panel" id="help-panel">
+      <h3>Legend &amp; Explanations</h3>
+
+      <div id="selection-help" class="tip" style="display:none; border-left-color: var(--accent);">
+        <strong>Selected item:</strong> <span id="sel-action"></span><br>
+        <span id="sel-explanation" style="font-size:0.78rem; display:block; margin-top:4px;"></span>
+      </div>
+
+      <div class="tip">
+        <strong>Tip:</strong> Click any session on the left to load its timeline instantly. Only the timeline area scrolls when you scroll in the middle. Click any timeline row on the right to see a detailed explanation here + raw data.
+      </div>
+
+      <h3>Core Concepts</h3>
+      <dl class="glossary">
+        <dt>Session</dt>
+        <dd>A complete interaction period with the agent (from start to end/stop). All actions inside are grouped here.</dd>
+
+        <dt>Chronicle / Chain</dt>
+        <dd>Append-only log of every action. Each entry is cryptographically signed (Ed25519) and linked by hash to the previous one. "Chain valid" means nothing was tampered with.</dd>
+
+        <dt>Spool</dt>
+        <dd>Temporary fast buffer for hook events. Data moves to the permanent signed DB on session end or manual flush. "Spool pending" = not yet in the main log.</dd>
+      </dl>
+
+      <h3>Timeline Item Types</h3>
+      <dl class="glossary">
+        <dt>🧠 llm.turn</dt>
+        <dd>Full LLM interaction: user messages + model thinking (if any) + final output + any tool calls planned + token usage + cost.</dd>
+
+        <dt>🔧 tool.call</dt>
+        <dd>The agent decided to use a tool (read file, run command, search_replace, web search, etc.). Often includes arguments.</dd>
+
+        <dt>💬 message.in</dt>
+        <dd>User prompt or input that started or continued the interaction.</dd>
+
+        <dt>📖 / ✏️ file.*</dt>
+        <dd>File operations performed by tools (read, write, edit). These are extracted from tool calls for clarity.</dd>
+
+        <dt>▶️ / ⏹️ session.*</dt>
+        <dd>Start or end of an agent session. Marks the boundaries of a conversation or task run.</dd>
+      </dl>
+
+      <h3>Stats Cards</h3>
+      <dl class="glossary">
+        <dt>Entries</dt>
+        <dd>Total signed log lines in the entire chronicle.</dd>
+        <dt>Tool calls / LLM turns</dt>
+        <dd>Count of tool uses vs. full model responses. High tool/turn ratio often means heavy agentic behavior.</dd>
+        <dt>Spool pending</dt>
+        <dd>Events waiting to be flushed into the immutable DB.</dd>
+      </dl>
+
+      <div class="tip">
+        Click any timeline row for more details (id, full data). Use the filter above the sessions list or the global search in the header.
+      </div>
+    </aside>
   </main>
 
   <script>
     const statsGrid = document.getElementById('stats-grid');
     const sessionList = document.getElementById('session-list');
+    const sessionFilter = document.getElementById('session-filter');
+    const globalSearch = document.getElementById('global-search');
+    const searchResults = document.getElementById('global-search-results');
     const chainBadge = document.getElementById('chain-badge');
+    const liveIndicator = document.getElementById('live-indicator');
     const timeline = document.getElementById('timeline');
     const timelineMeta = document.getElementById('timeline-meta');
     const lookupForm = document.getElementById('lookup-form');
     const sessionInput = document.getElementById('session-input');
+    const exportBtn = document.getElementById('export-btn');
+
+    let currentSessionId = null;
+    let allSessions = [];
+    let currentReport = null;
+    let refreshTimer = null;
+
+    // Pagination state for timeline (middle frame)
+    let fullTimelineItems = [];
+    let currentTimelinePage = 0;
+    const TIMELINE_PAGE_SIZE = 30;
+    let currentTimelineFilter = 'all'; // 'all' or 'rich'
+
+    // Attach session click delegation only once (robust to re-renders)
+    if (sessionList) {
+      sessionList.addEventListener('click', (e) => {
+        const btn = e.target.closest('.session-item');
+        if (btn) {
+          loadSession(btn.dataset.session);
+        }
+      });
+    }
 
     function fmtDate(value) {
       if (!value) return '—';
@@ -68,39 +176,224 @@
         </div>
       `).join('');
 
-      sessionList.innerHTML = (data.sessions || []).map((s) => `
-        <button class="session-item" data-session="${s.session_id}">
+      allSessions = data.sessions || [];
+      renderSessionList(allSessions);
+    }
+
+    function renderSessionList(sessions) {
+      const q = (sessionFilter && sessionFilter.value || '').toLowerCase().trim();
+      const filtered = sessions.filter(s => {
+        const id = (s.session_id || '').toLowerCase();
+        const meta = `${s.entries} ${fmtDate(s.started)}`.toLowerCase();
+        return !q || id.includes(q) || meta.includes(q);
+      });
+
+      sessionList.innerHTML = filtered.map((s) => `
+        <button class="session-item ${s.session_id === currentSessionId ? 'active' : ''}" data-session="${s.session_id}">
           <span class="session-id">${s.session_id.slice(0, 18)}…</span>
           <span class="session-meta">${s.entries} entries · ${fmtDate(s.started)}</span>
         </button>
       `).join('') || '<p class="empty">No sessions yet.</p>';
+    }
 
-      document.querySelectorAll('.session-item').forEach((btn) => {
-        btn.addEventListener('click', () => loadSession(btn.dataset.session));
-      });
+    // Live auto-refresh (polls every 15s)
+    async function refreshStats() {
+      try {
+        const res = await fetch('/api/stats');
+        const data = await res.json();
+        const oldActive = currentSessionId;
+        renderStats(data);
+        // restore active highlight and current if still present
+        if (oldActive) {
+          document.querySelectorAll('.session-item').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.session === oldActive);
+          });
+        }
+        if (liveIndicator) liveIndicator.style.color = 'var(--ok)';
+        setTimeout(() => { if (liveIndicator) liveIndicator.style.color = 'var(--ok)'; }, 800);
+      } catch (e) {
+        if (liveIndicator) liveIndicator.style.color = 'var(--bad)';
+      }
+    }
+
+    function startLiveRefresh() {
+      if (refreshTimer) clearInterval(refreshTimer);
+      refreshTimer = setInterval(refreshStats, 15000);
+      // initial one after load
+      setTimeout(refreshStats, 5000);
     }
 
     function renderTimeline(data) {
       const report = data.report;
+      currentReport = report;
+      fullTimelineItems = report.timeline || [];
+      currentTimelinePage = 0;
+      currentTimelineFilter = 'all';
+
       timelineMeta.innerHTML = `
-        <div class="meta-row"><strong>${report.sessionId}</strong></div>
+        <div class="meta-row"><strong>${report.sessionId}</strong> <button onclick="copyToClipboard('${report.sessionId}')" style="font-size:0.7rem; padding:1px 4px; margin-left:4px;">copy</button></div>
         <div class="meta-row">${fmtDate(report.started)} → ${fmtDate(report.ended)}</div>
         <div class="meta-row">Tools ${report.counts.tools} · Reads ${report.counts.reads} · Writes ${report.counts.writes} · Turns ${report.counts.turns}</div>
       `;
 
-      timeline.innerHTML = report.timeline.map((item) => `
-        <article class="timeline-item">
-          <time>${new Date(item.timestamp).toLocaleTimeString()}</time>
-          <div>
-            <span class="timeline-icon">${item.icon}</span>
-            <span class="timeline-summary">${item.summary}</span>
+      // Reset filter buttons
+      document.querySelectorAll('#timeline-filters .filter-btn').forEach(b => b.classList.remove('active'));
+      const allFilter = document.querySelector('#timeline-filters .filter-btn[data-filter="all"]');
+      if (allFilter) allFilter.classList.add('active');
+
+      renderTimelinePage(false);
+      updateLoadMoreButton();
+    }
+
+    function getFilteredTimelineItems() {
+      let items = fullTimelineItems;
+      if (currentTimelineFilter === 'rich') {
+        items = items.filter(it => it.model || it.hasResult || (it.preview && it.preview.length > 50) || it.action === 'llm.turn');
+      }
+      return items;
+    }
+
+    function renderTimelinePage(append = false) {
+      const items = getFilteredTimelineItems();
+      const start = currentTimelinePage * TIMELINE_PAGE_SIZE;
+      const pageItems = items.slice(start, start + TIMELINE_PAGE_SIZE);
+
+      if (!append) {
+        timeline.innerHTML = '';
+      }
+
+      if (pageItems.length === 0) {
+        if (!append) {
+          timeline.innerHTML = '<p class="empty" style="padding:1rem; text-align:center;">No items to display for this session (or filter). Use "Load more" or change filter.</p>';
+        }
+        updateTimelineCount(items.length);
+        return;
+      }
+
+      const html = pageItems.map((item) => {
+        const timeStr = new Date(item.timestamp).toLocaleTimeString();
+        const action = item.action || 'entry';
+        const title = item.title || item.summary || action;
+        const preview = item.preview || item.summary || '';
+        const modelInfo = item.model ? ` | model: ${item.model}` : '';
+        const tokensInfo = (item.usage && item.usage.totalTokens) ? ` | ${item.usage.totalTokens} tok` : '';
+        const hasResultInfo = item.hasResult ? ' | has result' : '';
+
+        const summaryLine = `${title}${modelInfo}${tokensInfo}${hasResultInfo}`;
+
+        return `
+          <div class="timeline-item" data-id="${item.id || ''}" data-action="${action}" style="border:1px solid #334155; border-radius:8px; margin-bottom:4px; padding:6px 8px; background:#111821; cursor:pointer;">
+            <div style="display:flex; justify-content:space-between; font-size:0.85rem;">
+              <div>
+                <span style="color:#888; font-family:monospace;">${timeStr}</span>
+                <span style="margin-left:6px;">${item.icon || '•'} ${summaryLine}</span>
+              </div>
+              <div style="color:#666; font-size:0.7rem;">click to expand</div>
+            </div>
+            <div class="item-details" style="display:none; margin-top:6px; padding-top:6px; border-top:1px dashed #334155; font-size:0.8rem;">
+              <div style="margin-bottom:4px; color:#aaa;">
+                ${item.model ? `<strong>Model:</strong> ${item.model}<br>` : ''}
+                ${item.usage ? `<strong>Usage:</strong> ${JSON.stringify(item.usage)}<br>` : ''}
+                ${item.resultPreview ? `<strong>Result:</strong> ${item.resultPreview.slice(0,150)}<br>` : ''}
+              </div>
+              <pre style="background:#0a0f16; padding:6px; border-radius:4px; max-height:300px; overflow:auto; font-size:0.7rem; margin:0;">${JSON.stringify(item, null, 2).replace(/</g,'&lt;')}</pre>
+            </div>
           </div>
-        </article>
-      `).join('');
+        `;
+      }).join('');
+
+      timeline.insertAdjacentHTML('beforeend', html);
+      updateTimelineCount(items.length);
+
+      // Attach click to show full details in the middle pane (large formatted view + big JSON)
+      // Also toggle any inline details if present, but main "load" is the pane in middle column
+      timeline.querySelectorAll('.timeline-item').forEach(item => {
+        item.addEventListener('click', (e) => {
+          const id = item.dataset.id;
+          if (id && currentReport) {
+            const fullItem = currentReport.timeline.find(t => t.id == id);
+            if (fullItem) {
+              showItemDetail(fullItem);
+            }
+          }
+          // optional: toggle inline if the .item-details exists from template
+          const det = item.querySelector('.item-details');
+          if (det) {
+            det.style.display = (det.style.display === 'none' || !det.style.display) ? 'block' : 'none';
+          }
+        });
+      });
+    }
+
+    function updateTimelineCount(total) {
+      const countEl = document.getElementById('timeline-count');
+      if (countEl) {
+        const shown = Math.min((currentTimelinePage + 1) * TIMELINE_PAGE_SIZE, total);
+        countEl.textContent = `Showing ${shown} of ${total} items`;
+      }
+    }
+
+    function updateLoadMoreButton() {
+      const btn = document.getElementById('load-more-btn');
+      if (!btn) return;
+      const items = getFilteredTimelineItems();
+      const hasMore = ((currentTimelinePage + 1) * TIMELINE_PAGE_SIZE) < items.length;
+      btn.style.display = hasMore ? 'inline-block' : 'none';
+      if (hasMore) {
+        btn.textContent = `Load next ${TIMELINE_PAGE_SIZE} items`;
+      }
+    }
+
+    function loadNextTimelinePage() {
+      currentTimelinePage++;
+      renderTimelinePage(true);
+      updateLoadMoreButton();
+    }
+
+    function setupTimelinePaginationControls() {
+      const filterBar = document.getElementById('timeline-filters');
+      if (filterBar) {
+        filterBar.addEventListener('click', (e) => {
+          const btn = e.target.closest('.filter-btn');
+          if (!btn) return;
+          filterBar.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          currentTimelineFilter = btn.dataset.filter || 'all';
+          currentTimelinePage = 0;
+          renderTimelinePage(false);
+          updateLoadMoreButton();
+        });
+      }
+
+      const loadBtn = document.getElementById('load-more-btn');
+      if (loadBtn) {
+        loadBtn.addEventListener('click', loadNextTimelinePage);
+      }
+    }
+
+    function copyToClipboard(text) {
+      navigator.clipboard.writeText(text).then(() => {
+        const orig = event.target ? event.target.textContent : '';
+        if (event.target) event.target.textContent = 'copied!';
+        setTimeout(() => { if (event.target) event.target.textContent = orig || 'copy'; }, 800);
+      });
     }
 
     async function loadSession(id) {
+      if (!id) return;
+      currentSessionId = id;
       sessionInput.value = id;
+
+      // Update active in list immediately
+      document.querySelectorAll('.session-item').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.session === id);
+      });
+
+      const activeBtn = sessionList.querySelector('.session-item.active');
+      if (activeBtn) {
+        activeBtn.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      }
+
       const res = await fetch(`/api/sessions/${encodeURIComponent(id)}`);
       const data = await res.json();
       if (!res.ok) {
@@ -109,6 +402,93 @@
         return;
       }
       renderTimeline(data);
+
+      if (location.hash !== '#' + id) {
+        history.replaceState(null, '', '#' + id);
+      }
+
+      // Clear previous item selection when loading a new session
+      const selectionHelp = document.getElementById('selection-help');
+      if (selectionHelp) selectionHelp.style.display = 'none';
+    }
+
+    // Export current session
+    function exportCurrentSession() {
+      if (!currentReport || !currentSessionId) {
+        alert('Load a session first');
+        return;
+      }
+      const blob = new Blob([JSON.stringify(currentReport, null, 2)], {type: 'application/json'});
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `session-${currentSessionId}.json`;
+      a.click();
+    }
+
+    // Show full details for a clicked timeline item in the dedicated middle pane (large, formatted, easy)
+    function showItemDetail(item) {
+      const pane = document.getElementById('item-detail-pane');
+      const header = document.getElementById('detail-header');
+      const metaDiv = document.getElementById('detail-meta');
+      const jsonPre = document.getElementById('detail-json');
+      if (!pane || !header || !metaDiv || !jsonPre) return;
+
+      pane.style.display = 'block';
+      header.textContent = `Item: ${item.action || 'entry'} — ${new Date(item.timestamp).toLocaleString()}`;
+
+      let metaHtml = `<strong>ID:</strong> ${item.id || 'n/a'}<br>`;
+      metaHtml += `<strong>Action:</strong> ${item.action || 'n/a'}<br>`;
+      if (item.model) metaHtml += `<strong>Model:</strong> ${item.model}<br>`;
+      if (item.usage) metaHtml += `<strong>Usage:</strong> ${JSON.stringify(item.usage)}<br>`;
+      if (item.title) metaHtml += `<strong>Title:</strong> ${item.title}<br>`;
+      if (item.preview) metaHtml += `<strong>Preview:</strong> ${item.preview}<br>`;
+      if (item.resultPreview) metaHtml += `<strong>Result:</strong> ${item.resultPreview}<br>`;
+      if (item.badges && item.badges.length) metaHtml += `<strong>Badges:</strong> ${item.badges.join(', ')}<br>`;
+      metaDiv.innerHTML = metaHtml;
+
+      jsonPre.textContent = JSON.stringify(item, null, 2);
+
+      const close = document.getElementById('detail-close-btn');
+      if (close) {
+        close.onclick = () => { pane.style.display = 'none'; };
+      }
+
+      // Scroll the pane into view
+      pane.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    // Global search (debounced)
+    let searchDebounce = null;
+    async function doGlobalSearch(q) {
+      if (!q || q.length < 2) {
+        searchResults.style.display = 'none';
+        return;
+      }
+      const res = await fetch(`/api/search?q=${encodeURIComponent(q)}&limit=15`);
+      const data = await res.json();
+      if (!data.results || !data.results.length) {
+        searchResults.innerHTML = '<div style="padding:6px;">No matches</div>';
+        searchResults.style.display = 'block';
+        return;
+      }
+      searchResults.innerHTML = data.results.map(r => `
+        <div style="padding:4px 6px; cursor:pointer; border-bottom:1px solid #222;" data-sid="${r.session_id || ''}">
+          <span style="color:var(--muted); font-size:0.7rem;">${new Date(r.timestamp).toLocaleTimeString()}</span>
+          <strong>${r.action}</strong> — ${r.summary}
+          ${r.session_id ? `<span style="font-size:0.7rem; color:#666;"> (${r.session_id.slice(0,10)}…)</span>` : ''}
+        </div>
+      `).join('');
+      searchResults.style.display = 'block';
+
+      // Click to load session
+      searchResults.querySelectorAll('div[data-sid]').forEach(div => {
+        div.onclick = () => {
+          const sid = div.dataset.sid;
+          searchResults.style.display = 'none';
+          globalSearch.value = '';
+          if (sid) loadSession(sid);
+        };
+      });
     }
 
     async function init() {
@@ -132,14 +512,100 @@
         chainBadge.textContent = 'Chain not verified';
       }
 
+      // Support loading from URL hash immediately
+      const hash = location.hash.replace('#', '').trim();
+      if (hash) {
+        const match = allSessions.find(s => s.session_id === hash || s.session_id.startsWith(hash));
+        if (match) {
+          loadSession(match.session_id);
+        } else {
+          loadSession(hash);
+        }
+        // still start refresh
+        startLiveRefresh();
+        return;
+      }
+
       if (stats.sessions?.[0]) {
         loadSession(stats.sessions[0].session_id);
       }
+
+      startLiveRefresh();
+      setupTimelinePaginationControls();
     }
+
+    if (sessionFilter) {
+      sessionFilter.addEventListener('input', () => {
+        if (allSessions.length) renderSessionList(allSessions);
+      });
+    }
+
+    if (globalSearch) {
+      globalSearch.addEventListener('input', () => {
+        clearTimeout(searchDebounce);
+        searchDebounce = setTimeout(() => doGlobalSearch(globalSearch.value.trim()), 250);
+      });
+      globalSearch.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+          searchResults.style.display = 'none';
+          globalSearch.value = '';
+        }
+      });
+    }
+
+    if (exportBtn) {
+      exportBtn.addEventListener('click', exportCurrentSession);
+    }
+
+    // Setup pagination controls and the (now simpler) delegation for item interactions
+    setupTimelinePaginationControls();
+
+    // Note: the main expansion is now native <details> in the rendered HTML.
+    // We can still listen for additional info if needed, but the pagination setup handles filters and load more.
 
     lookupForm.addEventListener('submit', (e) => {
       e.preventDefault();
       loadSession(sessionInput.value.trim());
+    });
+
+    // Keyboard navigation (Quick Win)
+    document.addEventListener('keydown', (e) => {
+      if (e.key === '/') {
+        e.preventDefault();
+        if (sessionFilter) sessionFilter.focus();
+      } else if (e.key.toLowerCase() === 'f') {
+        e.preventDefault();
+        if (globalSearch) globalSearch.focus();
+      } else if (e.key === 'Escape') {
+        if (searchResults && searchResults.style.display !== 'none') {
+          searchResults.style.display = 'none';
+        } else if (sessionFilter && document.activeElement === sessionFilter) {
+          sessionFilter.value = '';
+          if (allSessions.length) renderSessionList(allSessions);
+        } else if (globalSearch && document.activeElement === globalSearch) {
+          globalSearch.value = '';
+          searchResults.style.display = 'none';
+        }
+      } else if ((e.key === 'j' || e.key === 'k') && allSessions.length) {
+        // Navigate sessions list
+        e.preventDefault();
+        const items = Array.from(sessionList.querySelectorAll('.session-item'));
+        if (!items.length) return;
+        let idx = items.findIndex(it => it.classList.contains('active'));
+        if (idx === -1) idx = 0;
+        idx = e.key === 'j' ? Math.min(idx + 1, items.length - 1) : Math.max(idx - 1, 0);
+        loadSession(items[idx].dataset.session);
+      } else if (e.key === 'Enter' && document.activeElement && document.activeElement.classList.contains('session-item')) {
+        loadSession(document.activeElement.dataset.session);
+      }
+    });
+
+    // Browser hash change
+    window.addEventListener('hashchange', () => {
+      const hash = location.hash.replace('#', '').trim();
+      if (hash && hash !== currentSessionId) {
+        loadSession(hash);
+      }
     });
 
     init();

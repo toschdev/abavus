@@ -190,12 +190,14 @@ async function main() {
       try {
         const { Persona } = await import('../lib/persona.js');
         const persona = Persona.create(name, options);
-        console.log(`✓ Created persona '${persona.name}'`);
+        console.log(`✓ Created persona '${persona.local_name || persona.persona_id}'`);
+        console.log(`  persona_id: ${persona.persona_id}`);
         console.log(`  Identity: ${persona.identity}`);
         if (persona.description) console.log(`  Description: ${persona.description}`);
         if (persona.strengths.length) console.log(`  Strengths: ${persona.strengths.join(', ')}`);
-        if (persona.knowledge.length) console.log(`  Knowledge: ${persona.knowledge.join(', ')}`);
+        console.log(`  Knowledge items: ${persona.knowledge.length}`);
         console.log(`  Created: ${persona.created}`);
+        console.log('\n' + persona.displayLearning());
       } catch (e) {
         console.error(`Error: ${e.message}`);
         process.exit(1);
@@ -214,10 +216,12 @@ async function main() {
         console.log('Personas:\n');
         for (const name of list) {
           const p = Persona.load(name);
-          console.log(`${p.name}`);
+          console.log(`${p.local_name || p.persona_id}`);
+          console.log(`  persona_id: ${p.persona_id}`);
           console.log(`  Identity: ${p.identity}`);
           if (p.description) console.log(`  ${p.description}`);
           if (p.strengths.length) console.log(`  Strengths: ${p.strengths.join(', ')}`);
+          console.log(`  Knowledge items: ${p.knowledge.length}`);
           console.log('');
         }
       } catch (e) {
@@ -228,8 +232,10 @@ async function main() {
 
     case 'persona': {
       const name = args[1];
+      const sub = args[2] || 'show';
+      
       if (!name) {
-        console.error('Usage: abavus persona <name> [info|fork|snapshot]');
+        console.error('Usage: abavus persona <name> [show | knowledge | add-knowledge | display-learning]');
         process.exit(1);
       }
       try {
@@ -240,15 +246,38 @@ async function main() {
         }
         const p = Persona.load(name);
         const info = p.info();
-        console.log(`Persona: ${p.name}`);
-        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-        console.log(`Identity:   ${p.identity} (exists: ${info.hasIdentity})`);
-        if (info.identityId) console.log(`  ID: ${info.identityId}`);
-        console.log(`Description: ${p.description || '(none)'}`);
-        console.log(`Strengths:   ${p.strengths.length ? p.strengths.join(', ') : '(none)'}`);
-        console.log(`Knowledge:   ${p.knowledge.length ? p.knowledge.join(', ') : '(none)'}`);
-        console.log(`Created:     ${p.created}`);
-        if (p.lastSnapshot) console.log(`Last snapshot: ${p.lastSnapshot}`);
+        
+        if (sub === 'show' || sub === 'info') {
+          console.log(`Persona: ${p.local_name || p.persona_id}`);
+          console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+          console.log(`persona_id (cryptographic): ${p.persona_id}`);
+          console.log(`local_name: ${p.local_name || '(none)'}`);
+          console.log(`Identity:   ${p.identity} (exists: ${info.hasIdentity})`);
+          if (info.identityId) console.log(`  ID: ${info.identityId}`);
+          console.log(`Description: ${p.description || '(none)'}`);
+          console.log(`Strengths:   ${p.strengths.length ? p.strengths.join(', ') : '(none)'}`);
+          console.log(`Knowledge items: ${p.knowledge.length}`);
+          console.log(`Created:     ${p.created}`);
+          if (p.lastSnapshot) console.log(`Last snapshot: ${p.lastSnapshot}`);
+          if (p.published_cid) console.log(`Published:   ${p.published_cid}`);
+          console.log('\n' + p.displayLearning());
+        } else if (sub === 'knowledge' || sub === 'display-learning') {
+          console.log(p.displayLearning());
+        } else if (sub === 'add-knowledge') {
+          const knowledge = {
+            type: args[3] || 'insight',
+            content: { note: args.slice(4).join(' ') || 'manual addition' },
+            provenance: {
+              llm_model: process.env.ABAVUS_LLM_MODEL || 'unknown',  // allow passing model
+              source: 'manual',
+              timestamp: new Date().toISOString()
+            }
+          };
+          const added = p.addKnowledge(knowledge);
+          console.log(`✓ Added knowledge ${added.id} (type: ${added.type}, model: ${added.provenance.llm_model})`);
+        } else {
+          console.error('Unknown subcommand. Use: show, knowledge, add-knowledge, display-learning');
+        }
       } catch (e) {
         console.error(`Error: ${e.message}`);
       }
@@ -271,9 +300,11 @@ async function main() {
         const { Persona } = await import('../lib/persona.js');
         const original = Persona.load(name);
         const forked = await original.fork(newName);
-        console.log(`✓ Forked persona '${name}' → '${newName}'`);
+        console.log(`✓ Forked persona '${original.local_name || original.persona_id}' → '${forked.local_name || forked.persona_id}'`);
+        console.log(`  New persona_id: ${forked.persona_id}`);
         console.log(`  New identity: ${forked.identity}`);
         console.log(`  Preserved strengths and knowledge from original.`);
+        console.log('\n' + forked.displayLearning());
       } catch (e) {
         console.error(`Error: ${e.message}`);
         process.exit(1);

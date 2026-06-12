@@ -89,6 +89,24 @@ async function handleApi(req, res, url) {
     return sendJson(res, 200, data);
   }
 
+  if (url.pathname === '/api/search') {
+    const q = url.searchParams.get('q') || '';
+    const limit = Math.min(parseInt(url.searchParams.get('limit') || '20', 10), 100);
+    if (!q.trim()) return sendJson(res, 200, { results: [], query: q });
+    const data = await withChronicle(async (chronicle) => {
+      const entries = chronicle.search(q, limit);
+      const results = entries.map(e => ({
+        id: e.id,
+        timestamp: e.timestamp,
+        action: e.action,
+        session_id: e.payload?.sessionId || e.payload?._sourceSession || null,
+        summary: (e.payload?.content || e.payload?.output?.content || e.payload?.message || '').toString().slice(0, 160) || e.action,
+      }));
+      return { results, query: q, count: results.length };
+    });
+    return sendJson(res, 200, data);
+  }
+
   return sendJson(res, 404, { error: 'not_found' });
 }
 
