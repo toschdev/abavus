@@ -48,21 +48,11 @@ node cli/abavus.js sessions
 node cli/abavus.js session <session-id>
 node cli/abavus.js verify
 
-<<<<<<< HEAD
-# Web viewer
+# Web viewer — chronicle of acts
+node viewer/seed-sample.mjs   # optional sample day
 npm run viewer
-# → http://127.0.0.1:3847
-=======
-# Web viewer (greatly improved dashboard)
-npm run viewer
-# → http://127.0.0.1:3847
+# http://127.0.0.1:3847
 
-Rich session explorer, global search, expandable events with thinking/tool results, filters, and export.
-
-# Marketing site (static)
-npm run site
-# or open site/index.html directly
->>>>>>> 89164dd (chore(license): switch entire repo to AGPL-3.0-only)
 ```
 
 ## CLI Commands
