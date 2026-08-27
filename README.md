@@ -153,6 +153,8 @@ Abavus can log Grok / Cursor agent activity in real time:
 3. `SessionEnd` / `Stop` flush the spool into the signed SQLite chronicle
 4. `abavus session <id>` or the web viewer shows the timeline
 
+Hook records carry `kind` (`done`, `said`, `commanded`, `inferred`) and a named `parentId` cause so the chronicle is a lineage of acts, not a flat tool dump.
+
 Restart the agent after installing hooks.
 
 ## Roadmap
