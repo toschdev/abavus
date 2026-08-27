@@ -63,6 +63,17 @@ export const ActionTypes = {
 };
 
 /**
+ * Four chronicle species. The viewer maps action types onto these.
+ * An entry may set payload.kind explicitly; see lib/kinds.js.
+ */
+export const EntryKinds = {
+  DONE: 'done',             // acted — tools, files, session work
+  SAID: 'said',             // speech
+  COMMANDED: 'commanded',   // instruction received
+  INFERRED: 'inferred',     // thought, conclusion, recovery
+};
+
+/**
  * Schema for LLM_TURN payload - the big one
  */
 export const LLMTurnSchema = {
@@ -274,6 +285,7 @@ export const CompressionConfig = {
 
 export default {
   ActionTypes,
+  EntryKinds,
   LLMTurnSchema,
   ToolCallSchema,
   ToolResultSchema,

@@ -30,3 +30,6 @@ coverage/
 # Build (if we add one later)
 dist/
 build/
+
+# Local viewer captures
+viewer/screenshots/

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Abavus Chronicle Viewer — minimal local web UI.
+ * Abavus Chronicle Viewer — local web UI for a day or session.
  */
 
 import { createServer } from 'http';
@@ -9,12 +9,13 @@ import { join, dirname, extname } from 'path';
 import { fileURLToPath } from 'url';
 import { SQLiteChronicle } from '../chronicle/sqlite.js';
 import { Identity } from '../core/index.js';
-import { buildSessionReport, resolveSessionQuery } from '../lib/session-report.js';
+import { buildSessionReport, buildDayReport, resolveSessionQuery } from '../lib/session-report.js';
 import { spoolStats } from '../lib/spool.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = join(__dirname, 'public');
 const PORT = Number(process.env.ABAVUS_VIEWER_PORT || 3847);
+const DB_PATH = process.env.ABAVUS_DB || undefined;
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -36,13 +37,17 @@ function sendJson(res, status, data) {
 }
 
 async function withChronicle(fn) {
-  const chronicle = new SQLiteChronicle();
+  const chronicle = DB_PATH ? new SQLiteChronicle(DB_PATH) : new SQLiteChronicle();
   await chronicle.init();
   try {
     return await fn(chronicle);
   } finally {
     chronicle.close();
   }
+}
+
+function isDayQuery(q) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(q || '');
 }
 
 async function handleApi(req, res, url) {
@@ -53,9 +58,10 @@ async function handleApi(req, res, url) {
   if (url.pathname === '/api/stats') {
     const data = await withChronicle(async (chronicle) => {
       const stats = chronicle.stats();
-      const sessions = chronicle.sessionStats(25);
+      const sessions = chronicle.sessionStats(40);
+      const days = chronicle.dayStats(60);
       const spool = spoolStats();
-      return { stats, sessions, spool };
+      return { stats, sessions, days, spool };
     });
     return sendJson(res, 200, data);
   }
@@ -63,7 +69,7 @@ async function handleApi(req, res, url) {
   if (url.pathname === '/api/verify') {
     const data = await withChronicle(async (chronicle) => {
       if (!Identity.exists('default')) {
-        return { valid: null, message: 'No default identity' };
+        return { valid: null, message: 'No default identity', brokeAt: null, errors: [] };
       }
       const identity = Identity.load('default');
       return chronicle.verifyChain(identity);
@@ -71,9 +77,33 @@ async function handleApi(req, res, url) {
     return sendJson(res, 200, data);
   }
 
+  if (url.pathname === '/api/days') {
+    const data = await withChronicle(async (chronicle) => ({ days: chronicle.dayStats(60) }));
+    return sendJson(res, 200, data);
+  }
+
+  if (url.pathname === '/api/day') {
+    const day = url.searchParams.get('date') || '';
+    if (!isDayQuery(day)) {
+      return sendJson(res, 400, { error: 'bad_date', hint: 'Use YYYY-MM-DD' });
+    }
+    const data = await withChronicle(async (chronicle) => {
+      const report = buildDayReport(chronicle, day);
+      return { day, report };
+    });
+    return sendJson(res, 200, data);
+  }
+
   const sessionMatch = url.pathname.match(/^\/api\/sessions\/(.+)$/);
   if (sessionMatch) {
     const query = decodeURIComponent(sessionMatch[1]);
+    if (isDayQuery(query)) {
+      const data = await withChronicle(async (chronicle) => {
+        const report = buildDayReport(chronicle, query);
+        return { day: query, report };
+      });
+      return sendJson(res, 200, data);
+    }
     const data = await withChronicle(async (chronicle) => {
       const resolved = resolveSessionQuery(chronicle, query);
       if (resolved.error || resolved.ambiguous) return resolved;
@@ -95,7 +125,7 @@ async function handleApi(req, res, url) {
     if (!q.trim()) return sendJson(res, 200, { results: [], query: q });
     const data = await withChronicle(async (chronicle) => {
       const entries = chronicle.search(q, limit);
-      const results = entries.map(e => ({
+      const results = entries.map((e) => ({
         id: e.id,
         timestamp: e.timestamp,
         action: e.action,
@@ -134,5 +164,5 @@ const server = createServer(async (req, res) => {
 });
 
 server.listen(PORT, '127.0.0.1', () => {
-  console.log(`Abavus viewer running at http://127.0.0.1:${PORT}`);
+  console.log(`Abavus chronicle at http://127.0.0.1:${PORT}`);
 });

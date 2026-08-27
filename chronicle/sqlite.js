@@ -164,9 +164,9 @@ export class SQLiteChronicle {
   /**
    * Append a new entry
    */
-  append(action, payload, identity) {
-    const id = randomId(8);
-    const timestamp = new Date().toISOString();
+  append(action, payload, identity, extras = {}) {
+    const id = extras.id || randomId(8);
+    const timestamp = extras.timestamp || new Date().toISOString();
     const prevHash = this.head;
 
     const canonical = JSON.stringify({
@@ -373,14 +373,32 @@ export class SQLiteChronicle {
   }
 
   /**
+   * Days with activity (UTC date from ISO timestamp).
+   */
+  dayStats(limit = 60) {
+    const result = this.db.exec(
+      "SELECT substr(timestamp, 1, 10) as day, COUNT(*) as entries, COUNT(DISTINCT session_id) as sessions FROM entries GROUP BY day ORDER BY day DESC LIMIT ?",
+      [limit]
+    );
+
+    if (result.length === 0) return [];
+    return result[0].values.map(row => ({
+      day: row[0],
+      entries: row[1],
+      sessions: row[2],
+    }));
+  }
+
+  /**
    * Verify chain integrity
    */
   verifyChain(identity) {
     const errors = [];
     let prevHash = null;
+    let brokeAt = null;
 
     const result = this.db.exec('SELECT * FROM entries ORDER BY rowid ASC');
-    if (result.length === 0) return { valid: true, errors: [], entries: 0, head: null };
+    if (result.length === 0) return { valid: true, errors: [], entries: 0, head: null, brokeAt: null };
 
     const columns = result[0].columns;
     const rows = result[0].values;
@@ -389,7 +407,11 @@ export class SQLiteChronicle {
       const row = this._rowToEntry(columns, rows[i]);
 
       if (row.prevHash !== prevHash) {
-        errors.push(`Entry ${i} (${row.id}): chain broken - prevHash mismatch`);
+        const reason = 'chain broken - prevHash mismatch';
+        errors.push(`Entry ${i} (${row.id}): ${reason}`);
+        if (!brokeAt) {
+          brokeAt = { index: i, id: row.id, timestamp: row.timestamp, action: row.action, reason };
+        }
       }
 
       const canonical = JSON.stringify({
@@ -404,14 +426,18 @@ export class SQLiteChronicle {
       if (row.signature) {
         const sig = Buffer.from(row.signature, 'base64');
         if (!identity.verify(canonical, sig)) {
-          errors.push(`Entry ${i} (${row.id}): invalid signature`);
+          const reason = 'invalid signature';
+          errors.push(`Entry ${i} (${row.id}): ${reason}`);
+          if (!brokeAt) {
+            brokeAt = { index: i, id: row.id, timestamp: row.timestamp, action: row.action, reason };
+          }
         }
       }
 
       prevHash = row.entryHash;
     }
 
-    return { valid: errors.length === 0, errors, entries: rows.length, head: this.head };
+    return { valid: errors.length === 0, errors, entries: rows.length, head: this.head, brokeAt };
   }
 
   /**
